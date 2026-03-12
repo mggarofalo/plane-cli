@@ -32,14 +32,14 @@ func (e *APIError) Error() string {
 
 // ExitCode returns the appropriate exit code for this error.
 func (e *APIError) ExitCode() int {
-	switch {
-	case e.StatusCode == http.StatusUnauthorized || e.StatusCode == http.StatusForbidden:
+	switch e.StatusCode {
+	case http.StatusUnauthorized, http.StatusForbidden:
 		return ExitAuthError
-	case e.StatusCode == http.StatusNotFound:
+	case http.StatusNotFound:
 		return ExitNotFound
-	case e.StatusCode == http.StatusUnprocessableEntity || e.StatusCode == http.StatusBadRequest:
+	case http.StatusUnprocessableEntity, http.StatusBadRequest:
 		return ExitValidation
-	case e.StatusCode == http.StatusTooManyRequests:
+	case http.StatusTooManyRequests:
 		return ExitRateLimited
 	default:
 		return ExitGeneralError

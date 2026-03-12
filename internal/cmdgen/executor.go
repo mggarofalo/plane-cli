@@ -367,7 +367,7 @@ func collectBodyParamsFromArgs(spec *docs.EndpointSpec, parsed *ParsedArgs, deps
 			val := parsed.Get(flagName)
 			// Parse as int
 			var n int
-			fmt.Sscanf(val, "%d", &n)
+			_, _ = fmt.Sscanf(val, "%d", &n)
 			body[p.Name] = n
 		case "boolean":
 			val := parsed.Get(flagName)

@@ -25,11 +25,13 @@ func WriteTableAligned(w io.Writer, headers []string, rows [][]string, alignment
 		tablewriter.WithHeader(headers),
 		tablewriter.WithHeaderAlignment(tw.AlignLeft),
 		tablewriter.WithAlignment(colAlign),
-		tablewriter.WithBorders(tw.Border{
-			Left:   tw.Off,
-			Right:  tw.Off,
-			Top:    tw.Off,
-			Bottom: tw.Off,
+		tablewriter.WithRendition(tw.Rendition{
+			Borders: tw.Border{
+				Left:   tw.Off,
+				Right:  tw.Off,
+				Top:    tw.Off,
+				Bottom: tw.Off,
+			},
 		}),
 	)
 	for _, row := range rows {
@@ -37,7 +39,7 @@ func WriteTableAligned(w io.Writer, headers []string, rows [][]string, alignment
 		for i, v := range row {
 			anyRow[i] = v
 		}
-		table.Append(anyRow...)
+		_ = table.Append(anyRow...)
 	}
-	table.Render()
+	_ = table.Render()
 }

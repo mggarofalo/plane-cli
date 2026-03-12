@@ -31,9 +31,7 @@ func ParseEndpointPage(markdown, topicName string, entry Entry) *EndpointSpec {
 
 	// Extract path parameters from template
 	if spec.PathTemplate != "" {
-		for _, p := range extractPathParams(spec.PathTemplate) {
-			spec.Params = append(spec.Params, p)
-		}
+		spec.Params = append(spec.Params, extractPathParams(spec.PathTemplate)...)
 	}
 
 	// Extract parameters: try inline format first (Plane docs style),
@@ -247,14 +245,14 @@ func mapColumns(headers []string) columnMap {
 	cm := columnMap{name: -1, typ: -1, required: -1, desc: -1}
 	for i, h := range headers {
 		lower := strings.ToLower(strings.TrimSpace(h))
-		switch {
-		case lower == "name" || lower == "parameter" || lower == "field" || lower == "property":
+		switch lower {
+		case "name", "parameter", "field", "property":
 			cm.name = i
-		case lower == "type" || lower == "data type":
+		case "type", "data type":
 			cm.typ = i
-		case lower == "required" || lower == "mandatory":
+		case "required", "mandatory":
 			cm.required = i
-		case lower == "description" || lower == "details":
+		case "description", "details":
 			cm.desc = i
 		}
 	}

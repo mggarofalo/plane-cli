@@ -1,0 +1,12 @@
+version: "2"
+
+linters:
+  settings:
+    errcheck:
+      exclude-functions:
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - fmt.Fprint
+        - (io.Closer).Close
+        - (*github.com/spf13/pflag.FlagSet).Set
+        - (*github.com/spf13/cobra.Command).MarkFlagRequired
