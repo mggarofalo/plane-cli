@@ -116,6 +116,10 @@ Table output features:
 - Numeric columns right-aligned
 - Auto-selected columns based on response fields
 
+**stdout/stderr contract:** Data (JSON or table) always goes to stdout. All messages, progress, hints, and errors go to stderr. This means `plane issue list -p X | jq .` always works.
+
+**DELETE commands** print `Deleted.` to stderr and produce no stdout.
+
 ### Pagination
 
 ```bash
@@ -132,6 +136,8 @@ plane issue list -p MYPROJECT --all
 plane issue list -p MYPROJECT --per-page 10 --cursor <next_cursor>
 ```
 
+**Note:** `--all` changes the JSON envelope. Without `--all`, the raw API response is returned (includes `next_cursor`, `prev_cursor`, `next_page_results`). With `--all`, the response is simplified to `{"results": [...], "total_count": N}` with pagination metadata stripped.
+
 ### Name resolution
 
 Path and body parameters that accept UUIDs also accept human-readable names. The CLI resolves names to UUIDs automatically:
@@ -147,6 +153,8 @@ plane issue list -p <project-uuid>  # direct UUID
 ```
 
 Supported: states, labels, cycles, modules, members, projects.
+
+**Note:** If resolution fails (e.g., a typo like `--state "In Progrss"`), the literal string is sent to the API, which will return a 400 error. Resolution does not produce a warning on failure.
 
 ### Available resources
 
@@ -182,6 +190,31 @@ plane docs update             # Refresh docs index
 plane docs update-specs       # Pre-cache all endpoint specs
 ```
 
+## Exit codes
+
+| Code | Meaning | HTTP status |
+|------|---------|-------------|
+| 0 | Success | 2xx |
+| 1 | General error | 5xx / network / unknown |
+| 2 | Authentication error | 401, 403 |
+| 3 | Not found | 404 |
+| 4 | Validation error | 400, 422 |
+| 5 | Rate limited | 429 |
+
+Error messages are printed to stderr in the format: `API error {code} ({url}): {body}`
+
+## For automation and AI agents
+
+When scripting or using the CLI from an AI agent:
+
+- **Skip interactive login.** Set `PLANE_API_KEY`, `PLANE_URL`, and `PLANE_WORKSPACE` as environment variables instead of running `plane auth login`.
+- **Pre-cache endpoint specs.** Run `plane docs update-specs` once before automating. Without cached specs, commands run in "Mode B" which prints extra stderr messages and lacks full `--help` support.
+- **Parse stdout only.** stdout is always clean JSON or table data. All messages, progress hints, and errors go to stderr.
+- **Check exit codes.** Use the exit code table above for error handling. Non-zero exit codes indicate specific failure categories.
+- **DELETE produces no stdout.** Only prints `Deleted.` to stderr on success.
+- **`--all` changes the envelope.** See the pagination section for details on the simplified envelope.
+- **Use `--output json`** (the default) for programmatic parsing. Table output is for human consumption.
+
 ## Configuration
 
 Config is stored at `~/.config/plane-cli/config.json` (respects `XDG_CONFIG_HOME`).
@@ -199,4 +232,4 @@ Config is stored at `~/.config/plane-cli/config.json` (respects `XDG_CONFIG_HOME
 }
 ```
 
-Endpoint specs are cached locally under `~/.config/plane-cli/docs/` and refreshed in the background.
+Endpoint specs are cached under `~/.cache/plane-cli/specs/{profile}/` (respects `XDG_CACHE_HOME`) and refreshed in the background when stale (>24 hours).
