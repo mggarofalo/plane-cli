@@ -6,8 +6,10 @@ import (
 )
 
 var (
-	methodPathRe = regexp.MustCompile(`(?i)(GET|POST|PATCH|PUT|DELETE)\s+(/api/v1/[^\s]+)`)
+	methodPathRe = regexp.MustCompile(`(?i)(GET|POST|PATCH|PUT|DELETE)\s*(/api/v1/[^\s]+)`)
 	statusCodeRe = regexp.MustCompile(`(?i)(?:Response|Status)[^0-9]*(\d{3})`)
+	// Matches: `param_name`:requiredtype or `param_name`:optionaltype
+	inlineParamRe = regexp.MustCompile("(?m)^`(\\w+)`:(required|optional)(\\S+)")
 )
 
 // ParseEndpointPage extracts an EndpointSpec from a markdown doc page.
@@ -34,9 +36,15 @@ func ParseEndpointPage(markdown, topicName string, entry Entry) *EndpointSpec {
 		}
 	}
 
-	// Extract parameters from markdown tables
-	tableParams := parseParamTables(markdown)
-	spec.Params = append(spec.Params, tableParams...)
+	// Extract parameters: try inline format first (Plane docs style),
+	// fall back to markdown tables
+	inlineParams := parseInlineParams(markdown)
+	if len(inlineParams) > 0 {
+		spec.Params = append(spec.Params, inlineParams...)
+	} else {
+		tableParams := parseParamTables(markdown)
+		spec.Params = append(spec.Params, tableParams...)
+	}
 
 	// Extract status code
 	if m := statusCodeRe.FindStringSubmatch(markdown); len(m) == 2 {
@@ -53,12 +61,10 @@ func ParseEndpointPage(markdown, topicName string, entry Entry) *EndpointSpec {
 }
 
 func cleanPath(path string) string {
-	// Remove trailing slashes, query strings
 	if idx := strings.Index(path, "?"); idx >= 0 {
 		path = path[:idx]
 	}
 	path = strings.TrimRight(path, "/")
-	// Normalize: ensure trailing slash for consistency
 	return path + "/"
 }
 
@@ -102,7 +108,6 @@ func extractPathParams(pathTemplate string) []ParamSpec {
 	var params []ParamSpec
 	for _, m := range matches {
 		name := m[1]
-		// Skip workspace_slug and project_id — these are handled globally
 		if name == "workspace_slug" || name == "project_id" {
 			continue
 		}
@@ -113,6 +118,79 @@ func extractPathParams(pathTemplate string) []ParamSpec {
 			Location: ParamPath,
 		})
 	}
+	return params
+}
+
+// parseInlineParams parses the Plane docs inline parameter format:
+//
+//	`param_name`:requiredstring
+//	Description text.
+//
+// Parameters are grouped under section headers like "### Path Parameters",
+// "### Body Parameters", "### Query Parameters".
+func parseInlineParams(markdown string) []ParamSpec {
+	var params []ParamSpec
+	lines := strings.Split(markdown, "\n")
+	location := ParamBody // default
+
+	for i := 0; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
+
+		// Detect section headers to determine param location
+		if strings.HasPrefix(line, "###") || strings.HasPrefix(line, "## ") {
+			lower := strings.ToLower(line)
+			if strings.Contains(lower, "path param") {
+				location = ParamPath
+			} else if strings.Contains(lower, "query param") {
+				location = ParamQuery
+			} else if strings.Contains(lower, "body param") {
+				location = ParamBody
+			} else if strings.Contains(lower, "scope") || strings.Contains(lower, "response") {
+				// Stop parsing params once we hit scopes or response sections
+				break
+			}
+			continue
+		}
+
+		// Try to match inline param pattern
+		m := inlineParamRe.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+
+		name := m[1]
+		required := m[2] == "required"
+		typStr := normalizeType(m[3])
+
+		// Skip path params already extracted from the URL template
+		if location == ParamPath && (name == "workspace_slug" || name == "project_id") {
+			continue
+		}
+		// Skip path params entirely — they're already extracted from the template
+		if location == ParamPath {
+			continue
+		}
+
+		// Next line(s) may be the description
+		desc := ""
+		if i+1 < len(lines) {
+			nextLine := strings.TrimSpace(lines[i+1])
+			// Description line: not empty, not another param, not a header
+			if nextLine != "" && !inlineParamRe.MatchString(nextLine) && !strings.HasPrefix(nextLine, "#") {
+				desc = nextLine
+				i++ // skip description line
+			}
+		}
+
+		params = append(params, ParamSpec{
+			Name:        name,
+			Type:        typStr,
+			Required:    required,
+			Description: desc,
+			Location:    location,
+		})
+	}
+
 	return params
 }
 
@@ -128,23 +206,19 @@ func parseParamTables(markdown string) []ParamSpec {
 			continue
 		}
 
-		// Determine column indices
 		headers := splitTableRow(line)
 		colMap := mapColumns(headers)
 		if colMap.name < 0 {
 			continue
 		}
 
-		// Skip separator line (|---|---|...)
 		i++
 		if i < len(lines) && isSeparatorLine(strings.TrimSpace(lines[i])) {
 			i++
 		}
 
-		// Determine parameter location from context above the table
-		location := inferLocationFromContext(lines, i-3) // look a few lines before the table
+		location := inferLocationFromContext(lines, i-3)
 
-		// Parse data rows
 		for ; i < len(lines); i++ {
 			row := strings.TrimSpace(lines[i])
 			if row == "" || !strings.Contains(row, "|") {
@@ -197,7 +271,6 @@ func isTableHeader(line string) bool {
 }
 
 func isSeparatorLine(line string) bool {
-	// Lines like |---|---|---| or | --- | --- |
 	cleaned := strings.ReplaceAll(line, " ", "")
 	cleaned = strings.ReplaceAll(cleaned, "|", "")
 	cleaned = strings.ReplaceAll(cleaned, "-", "")
@@ -206,7 +279,6 @@ func isSeparatorLine(line string) bool {
 }
 
 func splitTableRow(line string) []string {
-	// Remove leading/trailing pipe
 	line = strings.TrimSpace(line)
 	line = strings.TrimPrefix(line, "|")
 	line = strings.TrimSuffix(line, "|")
@@ -218,7 +290,6 @@ func splitTableRow(line string) []string {
 }
 
 func inferLocationFromContext(lines []string, approxIdx int) ParamLocation {
-	// Look at a few lines before the table for context clues
 	start := approxIdx - 5
 	if start < 0 {
 		start = 0
@@ -240,7 +311,7 @@ func inferLocationFromContext(lines []string, approxIdx int) ParamLocation {
 			return ParamPath
 		}
 	}
-	return ParamBody // default to body for API docs
+	return ParamBody
 }
 
 func extractParamFromRow(cells []string, cm columnMap, defaultLocation ParamLocation) *ParamSpec {
@@ -249,7 +320,6 @@ func extractParamFromRow(cells []string, cm columnMap, defaultLocation ParamLoca
 	}
 
 	name := strings.TrimSpace(cells[cm.name])
-	// Strip markdown formatting
 	name = strings.Trim(name, "`*")
 	if name == "" {
 		return nil

@@ -177,6 +177,70 @@ func TestInferStatusCode(t *testing.T) {
 	}
 }
 
+func TestParseEndpointPage_InlineParamFormat(t *testing.T) {
+	markdown := "# Create a work item\n" +
+		"POST/api/v1/workspaces/{workspace_slug}/projects/{project_id}/work-items/\n" +
+		"Creates a new work item.\n\n" +
+		"### Path Parameters\n\n" +
+		"`workspace_slug`:requiredstring\nThe workspace slug.\n\n" +
+		"`project_id`:requiredstring\nThe project ID.\n\n" +
+		"### Body Parameters\n\n" +
+		"`name`:requiredstring\nName of the work item.\n\n" +
+		"`description_html`:optionalstring\nHTML description.\n\n" +
+		"`priority`:optionalstring\nPriority level.\n\n" +
+		"`assignees`:optionalstring[]\nArray of user IDs.\n\n" +
+		"`labels`:optionalstring[]\nArray of label IDs.\n\n" +
+		"### Scopes\n\n" +
+		"`projects.work_items:write`\n"
+
+	entry := Entry{Title: "Create Work Item", URL: "https://developers.plane.so/api-reference/issue/add-issue"}
+	spec := ParseEndpointPage(markdown, "issue", entry)
+
+	if spec.Method != "POST" {
+		t.Errorf("expected POST, got %s", spec.Method)
+	}
+	if spec.PathTemplate != "/api/v1/workspaces/{workspace_slug}/projects/{project_id}/work-items/" {
+		t.Errorf("unexpected path: %s", spec.PathTemplate)
+	}
+
+	// Should have body params but NOT path params (workspace_slug, project_id)
+	bodyParams := 0
+	for _, p := range spec.Params {
+		if p.Location == ParamBody {
+			bodyParams++
+		}
+		if p.Name == "workspace_slug" || p.Name == "project_id" {
+			t.Errorf("should not include global path param %s", p.Name)
+		}
+	}
+	if bodyParams < 3 {
+		t.Errorf("expected at least 3 body params, got %d", bodyParams)
+	}
+
+	// Check specific params
+	var foundName, foundAssignees bool
+	for _, p := range spec.Params {
+		switch p.Name {
+		case "name":
+			foundName = true
+			if !p.Required {
+				t.Error("name should be required")
+			}
+		case "assignees":
+			foundAssignees = true
+			if p.Type != "string[]" {
+				t.Errorf("assignees should be string[], got %s", p.Type)
+			}
+		}
+	}
+	if !foundName {
+		t.Error("missing name param")
+	}
+	if !foundAssignees {
+		t.Error("missing assignees param")
+	}
+}
+
 func TestNormalizeType(t *testing.T) {
 	tests := []struct {
 		input    string

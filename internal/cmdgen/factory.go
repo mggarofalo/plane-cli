@@ -57,6 +57,15 @@ func BuildTopicCommand(topicName string, topic *docs.Topic, cachedSpecs []docs.C
 	return cmd
 }
 
+// globalFlagNames contains flag names used by the root command's persistent flags.
+// Spec params with these names are skipped to avoid conflicts.
+var globalFlagNames = map[string]bool{
+	"workspace": true, "project": true, "output": true,
+	"api-url": true, "api-key": true, "verbose": true,
+	"per-page": true, "cursor": true, "all": true,
+	"help": true,
+}
+
 // BuildEndpointCommand creates a fully-flagged command from a cached spec (Mode A).
 func BuildEndpointCommand(topicName, cmdName string, spec *docs.EndpointSpec, deps *Deps) *cobra.Command {
 	cmd := &cobra.Command{
@@ -74,6 +83,9 @@ func BuildEndpointCommand(topicName, cmdName string, spec *docs.EndpointSpec, de
 			continue
 		}
 		flagName := ParamToFlagName(p.Name)
+		if globalFlagNames[flagName] {
+			continue
+		}
 		desc := p.Description
 		if desc == "" {
 			desc = p.Name
@@ -90,10 +102,6 @@ func BuildEndpointCommand(topicName, cmdName string, spec *docs.EndpointSpec, de
 			cmd.Flags().String(flagName, "", desc)
 		}
 
-		if p.Required && p.Location != docs.ParamPath {
-			// Path params handled by URL building, only mark body/query as required
-			// Actually, path params (non-global) should also be required flags
-		}
 		if p.Required {
 			cmd.MarkFlagRequired(flagName)
 		}
