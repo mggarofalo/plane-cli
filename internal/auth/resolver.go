@@ -78,6 +78,22 @@ func (r *Resolver) ResolveAPIURL(flagURL string) string {
 	return ""
 }
 
+// ResolveDocsURL returns the docs base URL from flag, env, profile, or default.
+func (r *Resolver) ResolveDocsURL(flagDocsURL string) string {
+	if flagDocsURL != "" {
+		return flagDocsURL
+	}
+	if v := os.Getenv(EnvDocsURL); v != "" {
+		return v
+	}
+	if r.Config != nil {
+		if p := r.Config.ActiveProfileConfig(); p.DocsURL != "" {
+			return p.DocsURL
+		}
+	}
+	return ""
+}
+
 // ResolveWorkspace returns the workspace slug from flag, env, or config.
 func (r *Resolver) ResolveWorkspace(flagWorkspace string) string {
 	if flagWorkspace != "" {

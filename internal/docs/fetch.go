@@ -10,6 +10,35 @@ import (
 	"time"
 )
 
+// FetchLLMSTxt fetches the llms.txt index from the given base URL.
+func FetchLLMSTxt(ctx context.Context, baseURL string) (string, error) {
+	url := strings.TrimRight(baseURL, "/") + "/llms.txt"
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Accept", "text/plain")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("fetching %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("fetching %s: HTTP %d", url, resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("reading response: %w", err)
+	}
+
+	return string(body), nil
+}
+
 // Fetch retrieves a doc page and returns cleaned markdown content.
 func Fetch(ctx context.Context, url string) (string, error) {
 	client := &http.Client{Timeout: 15 * time.Second}

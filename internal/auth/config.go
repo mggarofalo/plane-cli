@@ -22,6 +22,7 @@ type Config struct {
 type Profile struct {
 	APIURL    string `json:"api_url"`
 	Workspace string `json:"workspace,omitempty"`
+	DocsURL   string `json:"docs_url,omitempty"`
 }
 
 // ConfigPath returns the path to the config file, respecting XDG_CONFIG_HOME.

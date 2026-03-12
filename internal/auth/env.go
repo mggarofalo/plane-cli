@@ -12,6 +12,7 @@ const (
 	EnvURL       = "PLANE_URL"
 	EnvWorkspace = "PLANE_WORKSPACE"
 	EnvProfile   = "PLANE_PROFILE"
+	EnvDocsURL   = "PLANE_DOCS_URL"
 )
 
 // EnvSource reads credentials from environment variables.
