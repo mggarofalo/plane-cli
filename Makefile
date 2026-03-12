@@ -4,7 +4,7 @@ COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -ldflags "-s -w -X github.com/mggarofalo/plane-cli/cmd.version=$(VERSION) -X github.com/mggarofalo/plane-cli/cmd.commit=$(COMMIT) -X github.com/mggarofalo/plane-cli/cmd.date=$(DATE)"
 
-.PHONY: build clean test lint install
+.PHONY: build clean test lint install hooks
 
 build:
 	go build $(LDFLAGS) -o bin/$(BINARY) .
@@ -20,3 +20,6 @@ test:
 
 lint:
 	golangci-lint run ./...
+
+hooks:
+	git config core.hooksPath .githooks

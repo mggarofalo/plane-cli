@@ -9,9 +9,14 @@ make build      # Build to bin/plane
 make install    # Install to $GOPATH/bin
 make test       # go test ./... -v
 make lint       # golangci-lint run ./...
+make hooks      # Set up git pre-commit hooks (build + test + lint)
 ```
 
 Go 1.25+ required. Static binaries (`CGO_ENABLED=0`) for release.
+
+### Git hooks
+
+Run `make hooks` to enable the pre-commit hook in `.githooks/`. It runs build, test (with race detector), vet, and golangci-lint before each commit. The hook gracefully skips lint if `golangci-lint` is not installed.
 
 ### Live integration tests
 

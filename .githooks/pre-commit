@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "pre-commit: running checks..."
+
+echo "  build..."
+go build ./...
+
+echo "  test..."
+go test ./... -race
+
+echo "  vet..."
+go vet ./...
+
+if command -v golangci-lint &>/dev/null; then
+    echo "  lint..."
+    golangci-lint run ./...
+else
+    echo "  lint: golangci-lint not installed, skipping (install: https://golangci-lint.run/welcome/install/)"
+fi
+
+echo "pre-commit: all checks passed"
