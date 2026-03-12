@@ -224,8 +224,14 @@ func resolveProjectIdentifier(identifier string) (string, error) {
 // PaginationParams returns pagination params from flags.
 // Exported for use by cmdgen package.
 func PaginationParams() api.PaginationParams {
+	perPage := flagPerPage
+	if perPage < 1 {
+		perPage = 1
+	} else if perPage > 100 {
+		perPage = 100
+	}
 	return api.PaginationParams{
-		PerPage: flagPerPage,
+		PerPage: perPage,
 		Cursor:  flagCursor,
 	}
 }
@@ -234,6 +240,41 @@ func PaginationParams() api.PaginationParams {
 // Exported for use by cmdgen package.
 func Formatter() output.Formatter {
 	return output.New(flagOutput)
+}
+
+// NewSessionClient creates an API client using session cookie auth.
+// Returns nil if no session cookie is stored.
+func NewSessionClient() *api.Client {
+	cfg, err := auth.LoadConfig()
+	if err != nil {
+		return nil
+	}
+
+	store, err := auth.NewKeyringStore("")
+	if err != nil {
+		return nil
+	}
+
+	profile := cfg.ActiveProfile
+	sessionCookie, err := store.Get(profile + "/session-token")
+	if err != nil || sessionCookie == "" {
+		return nil
+	}
+
+	resolver := &auth.Resolver{Config: cfg}
+	apiURL := resolver.ResolveAPIURL(flagAPIURL)
+	if apiURL == "" {
+		return nil
+	}
+
+	workspace := resolver.ResolveWorkspace(flagWorkspace)
+
+	var debugWriter *os.File
+	if flagVerbose {
+		debugWriter = os.Stderr
+	}
+
+	return api.NewSessionClient(apiURL, sessionCookie, workspace, flagVerbose, debugWriter)
 }
 
 // IsUUID checks if a string looks like a UUID (contains dashes and is ~36 chars).

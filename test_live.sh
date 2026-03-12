@@ -245,8 +245,8 @@ assert_rc "issue list json exits 0" 0 "$RUN_RC"
 
 run plane issue list -p "$PROJECT" --output table
 assert_rc "issue list table exits 0" 0 "$RUN_RC"
-assert_contains "issue list table has ID column" "$RUN_STDOUT" "ID"
-assert_contains "issue list table has NAME column" "$RUN_STDOUT" "NAME"
+assert_contains "issue list table has Id column" "$RUN_STDOUT" "Id"
+assert_contains "issue list table has Name column" "$RUN_STDOUT" "Name"
 
 # ============================================================
 section "6. State Commands"
@@ -258,7 +258,7 @@ assert_json_array_nonempty "state list returns states" "$RUN_STDOUT"
 
 run plane state list -p "$PROJECT" --output table
 assert_rc "state list table exits 0" 0 "$RUN_RC"
-assert_contains "state table has NAME column" "$RUN_STDOUT" "NAME"
+assert_contains "state table has Name column" "$RUN_STDOUT" "Name"
 
 # ============================================================
 section "7. Label Commands"

@@ -19,6 +19,7 @@ func init() {
 	authCmd.AddCommand(authLogoutCmd)
 	authCmd.AddCommand(authStatusCmd)
 	authCmd.AddCommand(authSwitchCmd)
+	authCmd.AddCommand(authSessionCmd)
 }
 
 var authCmd = &cobra.Command{
@@ -194,7 +195,81 @@ var authStatusCmd = &cobra.Command{
 			"token":     resolved.Credential.Masked(),
 		}
 
+		// Check for session cookie
+		if store != nil {
+			_, err := store.Get(cfg.ActiveProfile + "/session-token")
+			if err == nil {
+				status["session"] = "stored"
+			}
+		}
+
 		return Formatter().Format(os.Stdout, status)
+	},
+}
+
+var authSessionCmd = &cobra.Command{
+	Use:   "session",
+	Short: "Set a session cookie for internal API access (e.g., pages)",
+	Long: `Store a session cookie for endpoints that require session-based auth.
+
+Some Plane endpoints (e.g., pages) use internal APIs that don't accept
+API keys. Copy the session_id cookie value from your browser's dev tools
+(Application → Cookies → session_id) and paste it here.`,
+	Example: `  plane auth session
+  plane auth session --api-key <session_id_value>`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := auth.LoadConfig()
+		if err != nil {
+			return fmt.Errorf("loading config: %w", err)
+		}
+
+		profile := cfg.ActiveProfile
+
+		// Get session cookie value
+		sessionCookie := flagAPIKey // reuse --api-key flag for convenience
+		if sessionCookie == "" {
+			fmt.Fprint(os.Stderr, "Session cookie (session_id value from browser): ")
+			tokenBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
+			fmt.Fprintln(os.Stderr)
+			if err != nil {
+				return fmt.Errorf("reading session cookie: %w", err)
+			}
+			sessionCookie = strings.TrimSpace(string(tokenBytes))
+		}
+		if sessionCookie == "" {
+			return fmt.Errorf("session cookie is required")
+		}
+
+		// Validate by trying to access the API
+		profileCfg := cfg.ActiveProfileConfig()
+		apiURL := profileCfg.APIURL
+		if flagAPIURL != "" {
+			apiURL = flagAPIURL
+		}
+		if apiURL == "" {
+			return fmt.Errorf("no API URL configured. Run 'plane auth login' first")
+		}
+
+		client := api.NewSessionClient(apiURL, sessionCookie, profileCfg.Workspace, flagVerbose, os.Stderr)
+		users := api.NewUsersService(client)
+		user, err := users.Me(context.Background())
+		if err != nil {
+			return fmt.Errorf("session validation failed: %w", err)
+		}
+
+		// Store in keyring
+		store, err := auth.NewKeyringStore("")
+		if err != nil {
+			return fmt.Errorf("opening keyring: %w", err)
+		}
+		if err := store.Set(profile+"/session-token", sessionCookie); err != nil {
+			return fmt.Errorf("storing session cookie: %w", err)
+		}
+
+		fmt.Fprintf(os.Stderr, "Session stored for %s (%s)\n", user.DisplayName, user.Email)
+		fmt.Fprintf(os.Stderr, "Profile: %s\n", profile)
+		fmt.Fprintf(os.Stderr, "Session cookie stored in OS keyring.\n")
+		return nil
 	},
 }
 

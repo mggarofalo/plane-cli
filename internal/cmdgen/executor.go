@@ -438,6 +438,9 @@ func executeAutoPageinate(ctx context.Context, client *api.Client, baseURL strin
 	if deps.FlagPerPage != nil && *deps.FlagPerPage > 0 {
 		perPage = *deps.FlagPerPage
 	}
+	if perPage > 100 {
+		perPage = 100
+	}
 
 	for {
 		u, err := url.Parse(baseURL)

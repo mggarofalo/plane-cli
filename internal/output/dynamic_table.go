@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/olekukonko/tablewriter/tw"
 )
 
 // preferredColumns is the priority order for auto-selecting table columns.
@@ -14,8 +16,27 @@ var preferredColumns = []string{
 	"end_date", "target_date", "is_archived",
 }
 
+// numericColumns are columns that should be right-aligned.
+var numericColumns = map[string]bool{
+	"sequence_id": true, "sort_order": true, "point": true,
+	"total_pages": true, "total_count": true,
+}
+
 const maxTableColumns = 7
-const maxCellLen = 60
+
+// columnMaxLen returns the max display width for a column based on its type.
+func columnMaxLen(col string) int {
+	switch {
+	case col == "id":
+		return 8 // show short UUID
+	case strings.HasSuffix(col, "_at"):
+		return 10 // date only (YYYY-MM-DD)
+	case strings.HasSuffix(col, "_date"):
+		return 10
+	default:
+		return 50
+	}
+}
 
 // FormatDynamicTable renders a JSON response as a table by auto-detecting columns.
 func FormatDynamicTable(w io.Writer, data []byte) error {
@@ -34,10 +55,20 @@ func FormatDynamicTable(w io.Writer, data []byte) error {
 		return (&JSONFormatter{}).Format(w, json.RawMessage(data))
 	}
 
-	// Build rows
+	// Build headers with title case
 	headers := make([]string, len(columns))
 	for i, c := range columns {
-		headers[i] = strings.ToUpper(strings.ReplaceAll(c, "_", " "))
+		headers[i] = toTitleCase(c)
+	}
+
+	// Determine per-column alignment
+	alignments := make([]tw.Align, len(columns))
+	for i, col := range columns {
+		if numericColumns[col] {
+			alignments[i] = tw.AlignRight
+		} else {
+			alignments[i] = tw.AlignLeft
+		}
 	}
 
 	var rows [][]string
@@ -49,8 +80,19 @@ func FormatDynamicTable(w io.Writer, data []byte) error {
 		rows = append(rows, row)
 	}
 
-	WriteTable(w, headers, rows)
+	WriteTableAligned(w, headers, rows, alignments)
 	return nil
+}
+
+// toTitleCase converts "created_at" to "Created At".
+func toTitleCase(s string) string {
+	words := strings.Split(s, "_")
+	for i, w := range words {
+		if len(w) > 0 {
+			words[i] = strings.ToUpper(w[:1]) + w[1:]
+		}
+	}
+	return strings.Join(words, " ")
 }
 
 func extractItems(data []byte) ([]map[string]any, error) {
@@ -136,7 +178,7 @@ func extractCellValue(item map[string]any, key string) string {
 			// Try state_detail
 			if detail, ok := item["state_detail"].(map[string]any); ok {
 				if name, ok := detail["name"].(string); ok {
-					return truncate(name)
+					return truncate(name, columnMaxLen(key))
 				}
 			}
 		}
@@ -160,12 +202,38 @@ func extractCellValue(item map[string]any, key string) string {
 		str = fmt.Sprintf("%v", v)
 	}
 
-	return truncate(str)
+	return formatCell(str, key)
 }
 
-func truncate(s string) string {
-	if len(s) > maxCellLen {
-		return s[:maxCellLen-3] + "..."
+// formatCell applies column-aware formatting: truncates UUIDs, strips timestamps to dates.
+func formatCell(s, col string) string {
+	if s == "" {
+		return s
+	}
+	// Shorten UUIDs to first 8 chars
+	if col == "id" && looksLikeUUID(s) {
+		return s[:8]
+	}
+	// Strip timestamps to date only for date columns
+	if strings.HasSuffix(col, "_at") || strings.HasSuffix(col, "_date") {
+		if idx := strings.IndexByte(s, 'T'); idx >= 0 {
+			return s[:idx]
+		}
+	}
+	return truncate(s, columnMaxLen(col))
+}
+
+// looksLikeUUID checks if s has UUID format (36 chars, dashes at 8,13,18,23).
+func looksLikeUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	return s[8] == '-' && s[13] == '-' && s[18] == '-' && s[23] == '-'
+}
+
+func truncate(s string, maxLen int) string {
+	if maxLen > 0 && len(s) > maxLen {
+		return s[:maxLen-3] + "..."
 	}
 	return s
 }
