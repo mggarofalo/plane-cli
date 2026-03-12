@@ -76,6 +76,8 @@ func ExecuteSpec(ctx context.Context, cmd *cobra.Command, spec *docs.EndpointSpe
 
 	// Collect body params
 	body := collectBodyParams(cmd, spec, deps)
+	// Inject global path params (project_id, workspace_slug) when spec has them as body params
+	body = injectGlobalBodyParams(body, spec, client.Workspace, projectID)
 
 	// Execute the request
 	var respBody []byte
@@ -153,6 +155,7 @@ func ExecuteSpecFromArgs(ctx context.Context, spec *docs.EndpointSpec, parsed *P
 
 	// Collect body params from parsed args
 	body := collectBodyParamsFromArgs(spec, parsed, deps)
+	body = injectGlobalBodyParams(body, spec, client.Workspace, projectID)
 
 	// Execute
 	var respBody []byte
@@ -383,6 +386,38 @@ func collectBodyParamsFromArgs(spec *docs.EndpointSpec, parsed *ParsedArgs, deps
 	return body
 }
 
+// injectGlobalBodyParams adds project_id and workspace_slug to the body when
+// the spec lists them as body params. Some Plane endpoints (e.g., cycle create)
+// require these in the body even though they're also in the URL path.
+func injectGlobalBodyParams(body map[string]any, spec *docs.EndpointSpec, workspace, projectID string) map[string]any {
+	for _, p := range spec.Params {
+		if p.Location != docs.ParamBody {
+			continue
+		}
+		switch p.Name {
+		case "project_id", "project":
+			if projectID != "" {
+				if body == nil {
+					body = map[string]any{}
+				}
+				if _, exists := body[p.Name]; !exists {
+					body[p.Name] = projectID
+				}
+			}
+		case "workspace_slug", "workspace":
+			if workspace != "" {
+				if body == nil {
+					body = map[string]any{}
+				}
+				if _, exists := body[p.Name]; !exists {
+					body[p.Name] = workspace
+				}
+			}
+		}
+	}
+	return body
+}
+
 func formatResponse(respBody []byte, deps *Deps) error {
 	f := deps.Formatter()
 
@@ -453,20 +488,42 @@ func executeAutoPageinate(ctx context.Context, client *api.Client, baseURL strin
 	return formatResponse(data, deps)
 }
 
-// resolveIfNeeded resolves a value to UUID if the param name ends with _id and the value is not a UUID.
+// resolvableParams are body parameter names (without _id suffix) that accept
+// UUIDs but whose API field name doesn't end with _id. When the user passes a
+// human-readable name for one of these, we resolve it to a UUID.
+var resolvableParams = map[string]string{
+	"state":  "state",
+	"module": "module",
+	"parent": "issue",
+	"cycle":  "cycle",
+	"label":  "label",
+}
+
+// resolveIfNeeded resolves a value to UUID if the param expects an ID and the value is not a UUID.
 func resolveIfNeeded(ctx context.Context, value, paramName string, client *api.Client, projectID string, deps *Deps) string {
 	if deps.IsUUID == nil || deps.IsUUID(value) {
 		return value
 	}
-	if !strings.HasSuffix(paramName, "_id") {
-		return value
+
+	// Standard _id suffix params (e.g., state_id, label_id)
+	if strings.HasSuffix(paramName, "_id") {
+		resolved, err := ResolveNameToUUID(ctx, value, paramName, deps)
+		if err != nil {
+			return value
+		}
+		return resolved
 	}
-	// Attempt name-to-UUID resolution
-	resolved, err := ResolveNameToUUID(ctx, value, paramName, deps)
-	if err != nil {
-		return value // fallback to original
+
+	// Known params that accept UUIDs without _id suffix
+	if resourceName, ok := resolvableParams[paramName]; ok {
+		resolved, err := ResolveNameToUUID(ctx, value, resourceName+"_id", deps)
+		if err != nil {
+			return value
+		}
+		return resolved
 	}
-	return resolved
+
+	return value
 }
 
 // GenerateHelp prints help text for a spec.
