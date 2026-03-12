@@ -5,9 +5,12 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/mggarofalo/plane-cli/internal/api"
 	"github.com/mggarofalo/plane-cli/internal/auth"
+	"github.com/mggarofalo/plane-cli/internal/cmdgen"
+	"github.com/mggarofalo/plane-cli/internal/docs"
 	"github.com/mggarofalo/plane-cli/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -51,15 +54,83 @@ func init() {
 
 // Execute runs the root command and returns an exit code.
 func Execute() int {
-	if err := rootCmd.Execute(); err != nil {
+	registerDynamicCommands()
+
+	err := rootCmd.Execute()
+
+	waitForPendingUpdates(5 * time.Second)
+
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return api.ExitCodeFromError(err)
 	}
 	return api.ExitSuccess
 }
 
-// newClient creates an API client from resolved flags, env, and config.
-func newClient() (*api.Client, error) {
+// registerDynamicCommands creates Cobra commands for each API resource topic.
+// Uses DefaultTopics for command structure (since they contain granular CRUD entries),
+// and per-command spec cache for endpoint metadata.
+func registerDynamicCommands() {
+	cfg, err := auth.LoadConfig()
+	if err != nil {
+		return
+	}
+
+	profile := cfg.ActiveProfile
+	resolver := &auth.Resolver{Config: cfg}
+	docsURL := resolver.ResolveDocsURL(flagDocsURL)
+	if docsURL == "" {
+		docsURL = docs.DefaultBaseURL
+	}
+
+	deps := &cmdgen.Deps{
+		NewClient:        NewClient,
+		RequireWorkspace: RequireWorkspace,
+		RequireProject:   RequireProject,
+		PaginationParams: PaginationParams,
+		Formatter:        Formatter,
+		IsUUID:           IsUUID,
+		FlagAll:          &flagAll,
+		FlagPerPage:      &flagPerPage,
+		Profile:          profile,
+		BaseURL:          docsURL,
+	}
+
+	// Use DefaultTopics which have granular CRUD entries per resource.
+	// The remote llms.txt only has overview-level entries, not individual endpoints.
+	for _, topic := range docs.DefaultTopics {
+		if !cmdgen.FilteredTopicName(topic.Name) {
+			continue
+		}
+		if !cmdgen.TopicHasExecutableEntries(&topic) {
+			continue
+		}
+
+		// Load cached specs for this topic
+		cachedSpecs, _ := docs.LoadTopicSpecs(profile, topic.Name)
+
+		topicCmd := cmdgen.BuildTopicCommand(topic.Name, &topic, cachedSpecs, deps)
+		rootCmd.AddCommand(topicCmd)
+	}
+}
+
+// waitForPendingUpdates gives background spec refresh goroutines time to finish.
+func waitForPendingUpdates(timeout time.Duration) {
+	timer := time.After(timeout)
+	done := make(chan struct{})
+	go func() {
+		cmdgen.PendingUpdates.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-timer:
+	}
+}
+
+// NewClient creates an API client from resolved flags, env, and config.
+// Exported for use by cmdgen package.
+func NewClient() (*api.Client, error) {
 	cfg, err := auth.LoadConfig()
 	if err != nil {
 		return nil, fmt.Errorf("loading config: %w", err)
@@ -98,25 +169,25 @@ func newClient() (*api.Client, error) {
 	return api.NewClient(apiURL, resolved.Credential.Token(), workspace, flagVerbose, debugWriter), nil
 }
 
-// requireWorkspace returns the resolved workspace, or an error.
-func requireWorkspace(client *api.Client) error {
+// RequireWorkspace returns the resolved workspace, or an error.
+// Exported for use by cmdgen package.
+func RequireWorkspace(client *api.Client) error {
 	if client.Workspace == "" {
 		return fmt.Errorf("workspace is required. Use --workspace flag, set %s, or configure via 'plane auth login'", auth.EnvWorkspace)
 	}
 	return nil
 }
 
-// requireProject returns the project UUID. If --project is a short identifier
+// RequireProject returns the project UUID. If --project is a short identifier
 // (e.g. "PLANECLI"), it resolves it to a UUID via the API.
-func requireProject() (string, error) {
+// Exported for use by cmdgen package.
+func RequireProject() (string, error) {
 	if flagProject == "" {
 		return "", fmt.Errorf("project is required. Use --project flag")
 	}
-	// If it looks like a UUID, use it directly
 	if len(flagProject) == 36 && strings.Count(flagProject, "-") == 4 {
 		return flagProject, nil
 	}
-	// Otherwise treat it as an identifier and resolve
 	return resolveProjectIdentifier(flagProject)
 }
 
@@ -129,7 +200,7 @@ func resolveProjectIdentifier(identifier string) (string, error) {
 		return id, nil
 	}
 
-	client, err := newClient()
+	client, err := NewClient()
 	if err != nil {
 		return "", err
 	}
@@ -150,55 +221,33 @@ func resolveProjectIdentifier(identifier string) (string, error) {
 	return "", fmt.Errorf("project with identifier %q not found", identifier)
 }
 
-// resolveStateName resolves a state name (e.g. "Backlog") to its UUID for a given project.
-func resolveStateName(projectID, name string) (string, error) {
-	client, err := newClient()
-	if err != nil {
-		return "", err
-	}
-
-	svc := api.NewStatesService(client)
-	states, err := svc.List(context.Background(), projectID)
-	if err != nil {
-		return "", fmt.Errorf("resolving state %q: %w", name, err)
-	}
-
-	lower := strings.ToLower(name)
-	for _, s := range states {
-		if strings.ToLower(s.Name) == lower {
-			return s.ID, nil
-		}
-	}
-	return "", fmt.Errorf("state %q not found in project", name)
-}
-
-// resolveIssueRef resolves an issue reference (UUID or sequence identifier like "PLANECLI-2") to a UUID.
-func resolveIssueRef(projectID, issueRef string) (string, error) {
-	if isUUID(issueRef) {
-		return issueRef, nil
-	}
-	// Sequence identifier — look up via API
-	client, err := newClient()
-	if err != nil {
-		return "", err
-	}
-	svc := api.NewIssuesService(client)
-	issue, err := svc.GetBySequence(context.Background(), projectID, issueRef)
-	if err != nil {
-		return "", err
-	}
-	return issue.ID, nil
-}
-
-// paginationParams returns pagination params from flags.
-func paginationParams() api.PaginationParams {
+// PaginationParams returns pagination params from flags.
+// Exported for use by cmdgen package.
+func PaginationParams() api.PaginationParams {
 	return api.PaginationParams{
 		PerPage: flagPerPage,
 		Cursor:  flagCursor,
 	}
 }
 
-// formatter returns the output formatter based on the --output flag.
-func formatter() output.Formatter {
+// Formatter returns the output formatter based on the --output flag.
+// Exported for use by cmdgen package.
+func Formatter() output.Formatter {
 	return output.New(flagOutput)
+}
+
+// IsUUID checks if a string looks like a UUID (contains dashes and is ~36 chars).
+// Exported for use by cmdgen package.
+func IsUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i, c := range s {
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			if c != '-' {
+				return false
+			}
+		}
+	}
+	return true
 }

@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/mggarofalo/plane-cli/internal/auth"
+	"github.com/mggarofalo/plane-cli/internal/cmdgen"
 	"github.com/mggarofalo/plane-cli/internal/docs"
 	"github.com/spf13/cobra"
 )
@@ -16,6 +19,7 @@ var flagDocsURL string
 func init() {
 	rootCmd.AddCommand(docsCmd)
 	docsCmd.AddCommand(docsUpdateCmd)
+	docsCmd.AddCommand(docsUpdateSpecsCmd)
 
 	docsCmd.PersistentFlags().StringVar(&flagDocsURL, "docs-url", "", "Docs base URL (default: profile or "+docs.DefaultBaseURL+")")
 	docsCmd.Flags().Bool("list", false, "List all topics")
@@ -38,6 +42,7 @@ Run 'plane docs update' to refresh the cache.`,
   plane docs issue create        # Show the "Create Work Item" docs
   plane docs api-reference       # List all API reference entries
   plane docs update              # Refresh docs index from remote
+  plane docs update-specs        # Pre-warm endpoint spec cache
   plane docs --url https://developers.plane.so/api-reference/issue/overview`,
 	Args: cobra.MaximumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -98,6 +103,101 @@ var docsUpdateCmd = &cobra.Command{
 			total += len(t.Entries)
 		}
 		fmt.Fprintf(os.Stderr, "Updated: %d topics, %d entries.\n", len(registry.Topics()), total)
+		return nil
+	},
+}
+
+var docsUpdateSpecsCmd = &cobra.Command{
+	Use:   "update-specs",
+	Short: "Fetch and cache endpoint specs for all API topics",
+	Long: `Pre-warms the per-command spec cache by fetching all API doc pages,
+parsing endpoint metadata, and writing individual cache files.
+
+Useful for:
+- Pre-warming the cache for all commands
+- Refreshing after Plane releases new API features
+- CI/Docker image builds`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		registry, err := buildRegistry(cmd.Context())
+		if err != nil {
+			return err
+		}
+
+		cfg, err := auth.LoadConfig()
+		if err != nil {
+			return err
+		}
+		profile := cfg.ActiveProfile
+		baseURL := registry.BaseURL
+
+		// Collect all entries to fetch
+		type work struct {
+			topicName string
+			entry     docs.Entry
+		}
+		var entries []work
+		for _, topic := range registry.Topics() {
+			if !cmdgen.FilteredTopicName(topic.Name) {
+				continue
+			}
+			for _, entry := range topic.Entries {
+				if !cmdgen.IsAPIReferenceURL(entry.URL) {
+					continue
+				}
+				cmdName := cmdgen.DeriveSubcommandName(entry.Title, topic.Name)
+				if cmdName == "" {
+					continue
+				}
+				entries = append(entries, work{topicName: topic.Name, entry: entry})
+			}
+		}
+
+		fmt.Fprintf(os.Stderr, "Fetching specs for %d endpoints...\n", len(entries))
+
+		// Bounded concurrent fetching
+		const workers = 8
+		var wg sync.WaitGroup
+		ch := make(chan work, len(entries))
+		var successCount int64
+		var failCount int64
+
+		for i := 0; i < workers; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for w := range ch {
+					markdown, err := docs.Fetch(cmd.Context(), w.entry.URL)
+					if err != nil {
+						atomic.AddInt64(&failCount, 1)
+						continue
+					}
+					spec := docs.ParseEndpointPage(markdown, w.topicName, w.entry)
+					if spec == nil {
+						atomic.AddInt64(&failCount, 1)
+						continue
+					}
+					if err := docs.WriteSpec(profile, baseURL, spec); err != nil {
+						atomic.AddInt64(&failCount, 1)
+						continue
+					}
+					atomic.AddInt64(&successCount, 1)
+				}
+			}()
+		}
+
+		for _, w := range entries {
+			ch <- w
+		}
+		close(ch)
+		wg.Wait()
+
+		success := atomic.LoadInt64(&successCount)
+		fail := atomic.LoadInt64(&failCount)
+		fmt.Fprintf(os.Stderr, "Updated: %d endpoint specs cached", success)
+		if fail > 0 {
+			fmt.Fprintf(os.Stderr, " (%d failed)", fail)
+		}
+		fmt.Fprintln(os.Stderr, ".")
 		return nil
 	},
 }

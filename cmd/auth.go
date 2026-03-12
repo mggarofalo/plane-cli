@@ -194,7 +194,7 @@ var authStatusCmd = &cobra.Command{
 			"token":     resolved.Credential.Masked(),
 		}
 
-		return formatter().Format(os.Stdout, status)
+		return Formatter().Format(os.Stdout, status)
 	},
 }
 

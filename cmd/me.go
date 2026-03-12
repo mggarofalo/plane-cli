@@ -18,7 +18,7 @@ var meCmd = &cobra.Command{
 	Example: `  plane me
   plane me --output table`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		client, err := newClient()
+		client, err := NewClient()
 		if err != nil {
 			return err
 		}
@@ -29,6 +29,6 @@ var meCmd = &cobra.Command{
 			return err
 		}
 
-		return formatter().Format(os.Stdout, user)
+		return Formatter().Format(os.Stdout, user)
 	},
 }
