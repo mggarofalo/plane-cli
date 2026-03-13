@@ -169,7 +169,7 @@ func ExecuteSpecFromArgs(ctx context.Context, spec *docs.EndpointSpec, parsed *P
 	}
 
 	// Collect body params from parsed args
-	body := collectBodyParamsFromArgs(spec, parsed, deps)
+	body := collectBodyParamsFromArgs(ctx, spec, parsed, deps)
 	body = injectGlobalBodyParams(body, spec, client.Workspace, projectID)
 
 	// Extract many-to-many relation params before sending POST requests.
@@ -396,7 +396,7 @@ func collectBodyParams(cmd *cobra.Command, spec *docs.EndpointSpec, deps *Deps) 
 	return body
 }
 
-func collectBodyParamsFromArgs(spec *docs.EndpointSpec, parsed *ParsedArgs, deps *Deps) map[string]any {
+func collectBodyParamsFromArgs(ctx context.Context, spec *docs.EndpointSpec, parsed *ParsedArgs, deps *Deps) map[string]any {
 	if spec.Method == "GET" || spec.Method == "DELETE" {
 		return nil
 	}
@@ -438,7 +438,7 @@ func collectBodyParamsFromArgs(spec *docs.EndpointSpec, parsed *ParsedArgs, deps
 			val := parsed.GetSlice(flagName)
 			if len(val) > 0 {
 				if issueRefParams[p.Name] {
-					val = resolveSliceIfNeeded(context.Background(), val, p.Name, deps)
+					val = resolveSliceIfNeeded(ctx, val, p.Name, deps)
 				}
 				body[p.Name] = val
 			}
@@ -454,7 +454,7 @@ func collectBodyParamsFromArgs(spec *docs.EndpointSpec, parsed *ParsedArgs, deps
 		default:
 			val := parsed.Get(flagName)
 			if val != "" {
-				val = resolveIfNeeded(context.Background(), val, p.Name, nil, "", deps)
+				val = resolveIfNeeded(ctx, val, p.Name, nil, "", deps)
 				body[p.Name] = val
 			}
 		}
@@ -585,7 +585,6 @@ var issueRefParams = map[string]bool{
 var resolvableParams = map[string]string{
 	"state":  "state",
 	"module": "module",
-	"parent": "issue",
 	"cycle":  "cycle",
 	"label":  "label",
 }
