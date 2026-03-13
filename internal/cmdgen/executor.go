@@ -11,6 +11,7 @@ import (
 
 	"github.com/mggarofalo/plane-cli/internal/api"
 	"github.com/mggarofalo/plane-cli/internal/docs"
+	"github.com/mggarofalo/plane-cli/internal/markdown"
 	"github.com/mggarofalo/plane-cli/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -309,6 +310,28 @@ func collectBodyParams(cmd *cobra.Command, spec *docs.EndpointSpec, deps *Deps) 
 		if p.Location != docs.ParamBody {
 			continue
 		}
+
+		// For _html params, check the markdown flag first, then the raw HTML flag.
+		if IsHTMLParam(p.Name) {
+			mdFlag := MarkdownFlagName(p.Name)
+			htmlFlag := ParamToFlagName(p.Name)
+			if cmd.Flags().Changed(mdFlag) {
+				val, _ := cmd.Flags().GetString(mdFlag)
+				if val != "" {
+					html, err := markdown.ToHTML(val)
+					if err == nil {
+						body[p.Name] = html
+					}
+				}
+			} else if cmd.Flags().Changed(htmlFlag) {
+				val, _ := cmd.Flags().GetString(htmlFlag)
+				if val != "" {
+					body[p.Name] = val
+				}
+			}
+			continue
+		}
+
 		flagName := ParamToFlagName(p.Name)
 		if !cmd.Flags().Changed(flagName) {
 			continue
@@ -352,6 +375,28 @@ func collectBodyParamsFromArgs(spec *docs.EndpointSpec, parsed *ParsedArgs, deps
 		if p.Location != docs.ParamBody {
 			continue
 		}
+
+		// For _html params, check the markdown flag first, then the raw HTML flag.
+		if IsHTMLParam(p.Name) {
+			mdFlag := MarkdownFlagName(p.Name)
+			htmlFlag := ParamToFlagName(p.Name)
+			if parsed.Has(mdFlag) {
+				val := parsed.Get(mdFlag)
+				if val != "" {
+					html, err := markdown.ToHTML(val)
+					if err == nil {
+						body[p.Name] = html
+					}
+				}
+			} else if parsed.Has(htmlFlag) {
+				val := parsed.Get(htmlFlag)
+				if val != "" {
+					body[p.Name] = val
+				}
+			}
+			continue
+		}
+
 		flagName := ParamToFlagName(p.Name)
 		if !parsed.Has(flagName) {
 			continue
@@ -544,15 +589,28 @@ func GenerateHelp(w io.Writer, topicName, cmdName string, spec *docs.EndpointSpe
 		if p.Name == "workspace_slug" || p.Name == "project_id" {
 			continue
 		}
-		flagName := ParamToFlagName(p.Name)
-		req := ""
-		if p.Required {
-			req = " (required)"
-		}
 		desc := p.Description
 		if desc == "" {
 			desc = p.Type
 		}
+		req := ""
+		if p.Required {
+			req = " (required)"
+		}
+
+		if IsHTMLParam(p.Name) {
+			mdFlag := MarkdownFlagName(p.Name)
+			htmlFlag := ParamToFlagName(p.Name)
+			mdDesc := desc
+			if mdDesc == p.Name {
+				mdDesc = mdFlag
+			}
+			fmt.Fprintf(w, "  --%s\t%s (markdown)%s\n", mdFlag, mdDesc, req)
+			fmt.Fprintf(w, "  --%s\t%s (raw HTML)%s\n", htmlFlag, mdDesc, req)
+			continue
+		}
+
+		flagName := ParamToFlagName(p.Name)
 		fmt.Fprintf(w, "  --%s\t%s%s\n", flagName, desc, req)
 	}
 	fmt.Fprintln(w)

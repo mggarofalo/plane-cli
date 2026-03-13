@@ -77,6 +77,44 @@ func TestParamToFlagName(t *testing.T) {
 	}
 }
 
+func TestIsHTMLParam(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected bool
+	}{
+		{"description_html", true},
+		{"content_html", true},
+		{"name", false},
+		{"state_id", false},
+		{"html", false},
+	}
+
+	for _, tt := range tests {
+		got := IsHTMLParam(tt.input)
+		if got != tt.expected {
+			t.Errorf("IsHTMLParam(%q) = %v, want %v", tt.input, got, tt.expected)
+		}
+	}
+}
+
+func TestMarkdownFlagName(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"description_html", "description"},
+		{"content_html", "content"},
+		{"long_description_html", "long-description"},
+	}
+
+	for _, tt := range tests {
+		got := MarkdownFlagName(tt.input)
+		if got != tt.expected {
+			t.Errorf("MarkdownFlagName(%q) = %q, want %q", tt.input, got, tt.expected)
+		}
+	}
+}
+
 func TestIsAPIReferenceURL(t *testing.T) {
 	if !IsAPIReferenceURL("https://developers.plane.so/api-reference/issue/add-issue") {
 		t.Error("expected true for API reference URL")

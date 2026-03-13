@@ -136,6 +136,17 @@ func ParamToFlagName(paramName string) string {
 	return strings.ReplaceAll(paramName, "_", "-")
 }
 
+// IsHTMLParam returns true if the API parameter name has an _html suffix.
+func IsHTMLParam(apiParamName string) bool {
+	return strings.HasSuffix(apiParamName, "_html")
+}
+
+// MarkdownFlagName returns the markdown flag name for an _html param.
+// For example, "description_html" → "description".
+func MarkdownFlagName(apiParamName string) string {
+	return ParamToFlagName(strings.TrimSuffix(apiParamName, "_html"))
+}
+
 // IsAPIReferenceURL returns true if the URL contains /api-reference/.
 func IsAPIReferenceURL(url string) bool {
 	return strings.Contains(url, "/api-reference/")
