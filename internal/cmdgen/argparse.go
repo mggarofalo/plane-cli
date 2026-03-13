@@ -61,6 +61,7 @@ func ParseRawArgs(args []string, params []docs.ParamSpec) (*ParsedArgs, error) {
 		"api-url": true, "api-key": true,
 		"verbose": true, "per-page": true,
 		"cursor": true, "all": true,
+		"dry-run": true, "n": true,
 		"help": true, "h": true,
 	}
 

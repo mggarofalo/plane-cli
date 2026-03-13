@@ -26,6 +26,7 @@ var (
 	flagPerPage   int
 	flagCursor    string
 	flagAll       bool
+	flagDryRun    bool
 )
 
 var rootCmd = &cobra.Command{
@@ -51,6 +52,7 @@ func init() {
 	pf.IntVar(&flagPerPage, "per-page", 100, "Items per page (max 100)")
 	pf.StringVar(&flagCursor, "cursor", "", "Pagination cursor")
 	pf.BoolVar(&flagAll, "all", false, "Auto-paginate and return all results")
+	pf.BoolVarP(&flagDryRun, "dry-run", "n", false, "Print request details without executing")
 }
 
 // Execute runs the root command and returns an exit code.
@@ -93,6 +95,7 @@ func registerDynamicCommands() {
 		IsUUID:           IsUUID,
 		FlagAll:          &flagAll,
 		FlagPerPage:      &flagPerPage,
+		FlagDryRun:       &flagDryRun,
 		Profile:          profile,
 		BaseURL:          docsURL,
 	}
