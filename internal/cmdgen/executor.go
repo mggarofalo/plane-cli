@@ -369,6 +369,9 @@ func collectBodyParams(cmd *cobra.Command, spec *docs.EndpointSpec, deps *Deps) 
 		case "string[]":
 			val, _ := cmd.Flags().GetStringSlice(flagName)
 			if len(val) > 0 {
+				if issueRefParams[p.Name] {
+					val = resolveSliceIfNeeded(cmd.Context(), val, p.Name, deps)
+				}
 				body[p.Name] = val
 			}
 		case "number":
@@ -434,6 +437,9 @@ func collectBodyParamsFromArgs(spec *docs.EndpointSpec, parsed *ParsedArgs, deps
 		case "string[]":
 			val := parsed.GetSlice(flagName)
 			if len(val) > 0 {
+				if issueRefParams[p.Name] {
+					val = resolveSliceIfNeeded(context.Background(), val, p.Name, deps)
+				}
 				body[p.Name] = val
 			}
 		case "number":
@@ -448,6 +454,7 @@ func collectBodyParamsFromArgs(spec *docs.EndpointSpec, parsed *ParsedArgs, deps
 		default:
 			val := parsed.Get(flagName)
 			if val != "" {
+				val = resolveIfNeeded(context.Background(), val, p.Name, nil, "", deps)
 				body[p.Name] = val
 			}
 		}
@@ -564,6 +571,14 @@ func executeAutoPageinate(ctx context.Context, client *api.Client, baseURL strin
 	return formatResponse(data, deps)
 }
 
+// issueRefParams are parameter names that accept work-item references
+// (UUIDs or sequence IDs like "PROJ-42").
+var issueRefParams = map[string]bool{
+	"work_item_id": true,
+	"parent":       true,
+	"issues":       true,
+}
+
 // resolvableParams are body parameter names (without _id suffix) that accept
 // UUIDs but whose API field name doesn't end with _id. When the user passes a
 // human-readable name for one of these, we resolve it to a UUID.
@@ -579,6 +594,15 @@ var resolvableParams = map[string]string{
 func resolveIfNeeded(ctx context.Context, value, paramName string, client *api.Client, projectID string, deps *Deps) string {
 	if deps.IsUUID == nil || deps.IsUUID(value) {
 		return value
+	}
+
+	// Sequence ID resolution for issue-reference params (e.g. "PROJ-42")
+	if issueRefParams[paramName] && IsSequenceID(value) {
+		resolved, err := ResolveSequenceID(ctx, value, deps)
+		if err == nil {
+			return resolved
+		}
+		// Fall through to other resolution strategies
 	}
 
 	// Standard _id suffix params (e.g., state_id, label_id)
@@ -600,6 +624,15 @@ func resolveIfNeeded(ctx context.Context, value, paramName string, client *api.C
 	}
 
 	return value
+}
+
+// resolveSliceIfNeeded resolves each element in a string slice using resolveIfNeeded.
+func resolveSliceIfNeeded(ctx context.Context, values []string, paramName string, deps *Deps) []string {
+	resolved := make([]string, len(values))
+	for i, v := range values {
+		resolved[i] = resolveIfNeeded(ctx, v, paramName, nil, "", deps)
+	}
+	return resolved
 }
 
 // relationParams are body parameter names for many-to-many relationships that
