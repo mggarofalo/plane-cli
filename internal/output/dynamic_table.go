@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/mggarofalo/plane-cli/internal/markdown"
 	"github.com/olekukonko/tablewriter/tw"
 )
 
@@ -200,6 +201,13 @@ func extractCellValue(item map[string]any, key string) string {
 		str = ""
 	default:
 		str = fmt.Sprintf("%v", v)
+	}
+
+	// Convert _html fields from HTML to markdown for table display
+	if strings.HasSuffix(key, "_html") && str != "" {
+		if md, err := markdown.FromHTML(str); err == nil && md != "" {
+			str = md
+		}
 	}
 
 	return formatCell(str, key)

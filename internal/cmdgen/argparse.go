@@ -46,6 +46,11 @@ func ParseRawArgs(args []string, params []docs.ParamSpec) (*ParsedArgs, error) {
 	for i := range params {
 		flagName := ParamToFlagName(params[i].Name)
 		flagMap[flagName] = &params[i]
+		// Register markdown alias for _html params (e.g., --description → description_html spec)
+		if IsHTMLParam(params[i].Name) {
+			mdFlag := MarkdownFlagName(params[i].Name)
+			flagMap[mdFlag] = &params[i]
+		}
 	}
 
 	// Also recognize global flags

@@ -91,6 +91,20 @@ func BuildEndpointCommand(topicName, cmdName string, spec *docs.EndpointSpec, de
 			desc = p.Name
 		}
 
+		// For _html params, register both --description (markdown) and
+		// --description-html (raw HTML escape hatch) as mutually exclusive.
+		if IsHTMLParam(p.Name) {
+			mdFlag := MarkdownFlagName(p.Name)
+			mdDesc := desc
+			if mdDesc == p.Name {
+				mdDesc = mdFlag
+			}
+			cmd.Flags().String(mdFlag, "", mdDesc+" (markdown)")
+			cmd.Flags().String(flagName, "", mdDesc+" (raw HTML)")
+			cmd.MarkFlagsMutuallyExclusive(mdFlag, flagName)
+			continue
+		}
+
 		switch p.Type {
 		case "string[]":
 			cmd.Flags().StringSlice(flagName, nil, desc)
