@@ -80,6 +80,9 @@ func ExecuteSpec(ctx context.Context, cmd *cobra.Command, spec *docs.EndpointSpe
 	// Inject global path params (project_id, workspace_slug) when spec has them as body params
 	body = injectGlobalBodyParams(body, spec, client.Workspace, projectID)
 
+	// Extract many-to-many relation params before sending the request
+	relations := extractRelationParams(body)
+
 	// Execute the request
 	var respBody []byte
 	switch spec.Method {
@@ -120,6 +123,13 @@ func ExecuteSpec(ctx context.Context, cmd *cobra.Command, spec *docs.EndpointSpe
 		return err
 	}
 
+	// Handle post-creation actions for many-to-many relations
+	if spec.Method == "POST" && len(relations) > 0 {
+		if err := postCreateActions(ctx, relations, respBody, client, projectID); err != nil {
+			return err
+		}
+	}
+
 	if len(respBody) == 0 {
 		return nil
 	}
@@ -158,6 +168,9 @@ func ExecuteSpecFromArgs(ctx context.Context, spec *docs.EndpointSpec, parsed *P
 	body := collectBodyParamsFromArgs(spec, parsed, deps)
 	body = injectGlobalBodyParams(body, spec, client.Workspace, projectID)
 
+	// Extract many-to-many relation params before sending the request
+	relations := extractRelationParams(body)
+
 	// Execute
 	var respBody []byte
 	switch spec.Method {
@@ -193,6 +206,13 @@ func ExecuteSpecFromArgs(ctx context.Context, spec *docs.EndpointSpec, parsed *P
 
 	if err != nil {
 		return err
+	}
+
+	// Handle post-creation actions for many-to-many relations
+	if spec.Method == "POST" && len(relations) > 0 {
+		if err := postCreateActions(ctx, relations, respBody, client, projectID); err != nil {
+			return err
+		}
 	}
 
 	if len(respBody) == 0 {
@@ -572,6 +592,90 @@ func resolveIfNeeded(ctx context.Context, value, paramName string, client *api.C
 	}
 
 	return value
+}
+
+// relationParams are body parameter names for many-to-many relationships that
+// the Plane API silently ignores in the issue creation body. These must be
+// handled via separate API calls after the issue is created.
+var relationParams = map[string]struct{}{
+	"module": {},
+	"cycle":  {},
+}
+
+// extractRelationParams removes many-to-many relation fields (module, cycle)
+// from the body map and returns them separately. These fields are silently
+// ignored by the Plane API on issue creation and must be handled via follow-up
+// API calls.
+func extractRelationParams(body map[string]any) map[string]string {
+	if body == nil {
+		return nil
+	}
+
+	relations := map[string]string{}
+	for key := range relationParams {
+		val, ok := body[key]
+		if !ok {
+			continue
+		}
+		strVal, ok := val.(string)
+		if !ok || strVal == "" {
+			continue
+		}
+		relations[key] = strVal
+		delete(body, key)
+	}
+
+	if len(relations) == 0 {
+		return nil
+	}
+	return relations
+}
+
+// extractCreatedID parses the API response JSON and returns the "id" field.
+func extractCreatedID(respBody []byte) (string, error) {
+	var result map[string]any
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return "", fmt.Errorf("parsing response to extract issue ID: %w", err)
+	}
+	id, ok := result["id"].(string)
+	if !ok || id == "" {
+		return "", fmt.Errorf("response missing 'id' field")
+	}
+	return id, nil
+}
+
+// postCreateActions performs follow-up API calls to attach a newly created issue
+// to modules and/or cycles. The Plane API requires separate endpoints for these
+// many-to-many relationships.
+func postCreateActions(ctx context.Context, relations map[string]string, respBody []byte, client *api.Client, projectID string) error {
+	issueID, err := extractCreatedID(respBody)
+	if err != nil {
+		return err
+	}
+
+	payload := map[string]any{
+		"issues": []string{issueID},
+	}
+
+	if moduleID, ok := relations["module"]; ok {
+		moduleURL := fmt.Sprintf("%s/api/v1/workspaces/%s/projects/%s/modules/%s/module-issues/",
+			client.BaseURL, client.Workspace, projectID, moduleID)
+		if _, err := client.Post(ctx, moduleURL, payload); err != nil {
+			return fmt.Errorf("adding issue to module: %w", err)
+		}
+		fmt.Fprintln(os.Stderr, "Added to module.")
+	}
+
+	if cycleID, ok := relations["cycle"]; ok {
+		cycleURL := fmt.Sprintf("%s/api/v1/workspaces/%s/projects/%s/cycles/%s/cycle-issues/",
+			client.BaseURL, client.Workspace, projectID, cycleID)
+		if _, err := client.Post(ctx, cycleURL, payload); err != nil {
+			return fmt.Errorf("adding issue to cycle: %w", err)
+		}
+		fmt.Fprintln(os.Stderr, "Added to cycle.")
+	}
+
+	return nil
 }
 
 // GenerateHelp prints help text for a spec.
