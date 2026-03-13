@@ -16,7 +16,7 @@ var meCmd = &cobra.Command{
 	Use:   "me",
 	Short: "Show the authenticated user",
 	Example: `  plane me
-  plane me --output table`,
+  plane me -o json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := NewClient()
 		if err != nil {

@@ -13,6 +13,7 @@ import (
 	"github.com/mggarofalo/plane-cli/internal/docs"
 	"github.com/mggarofalo/plane-cli/internal/output"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 var (
@@ -43,7 +44,7 @@ func init() {
 	pf := rootCmd.PersistentFlags()
 	pf.StringVarP(&flagWorkspace, "workspace", "w", "", "Workspace slug")
 	pf.StringVarP(&flagProject, "project", "p", "", "Project ID or identifier")
-	pf.StringVarP(&flagOutput, "output", "o", "json", "Output format: json, table")
+	pf.StringVarP(&flagOutput, "output", "o", "", "Output format: json, table (default: table for TTY, json otherwise)")
 	pf.StringVar(&flagAPIURL, "api-url", "", "Base API URL")
 	pf.StringVar(&flagAPIKey, "api-key", "", "API key (prefer keyring or env var)")
 	pf.BoolVar(&flagVerbose, "verbose", false, "Debug HTTP logging (tokens redacted)")
@@ -237,9 +238,18 @@ func PaginationParams() api.PaginationParams {
 }
 
 // Formatter returns the output formatter based on the --output flag.
+// When no explicit format is given, defaults to table for TTY and json otherwise.
 // Exported for use by cmdgen package.
 func Formatter() output.Formatter {
-	return output.New(flagOutput)
+	format := flagOutput
+	if format == "" {
+		if term.IsTerminal(int(os.Stdout.Fd())) {
+			format = "table"
+		} else {
+			format = "json"
+		}
+	}
+	return output.New(format)
 }
 
 // NewSessionClient creates an API client using session cookie auth.
