@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 )
 
 // Format represents an output format.
@@ -43,13 +44,22 @@ func (f *JSONFormatter) Format(w io.Writer, data any) error {
 type TableFormatter struct{}
 
 func (f *TableFormatter) Format(w io.Writer, data any) error {
-	// For table output, we support specific types via type switches.
-	// For unknown types, fall back to JSON.
 	switch v := data.(type) {
 	case TableRenderable:
 		return v.RenderTable(w)
+	case map[string]string:
+		keys := make([]string, 0, len(v))
+		for k := range v {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		rows := make([][]string, len(keys))
+		for i, k := range keys {
+			rows[i] = []string{k, v[k]}
+		}
+		WriteTable(w, []string{"Field", "Value"}, rows)
+		return nil
 	default:
-		// Fallback: just print as JSON for types without table support
 		fmt.Fprintf(w, "Table format not supported for this data type; showing JSON:\n")
 		return (&JSONFormatter{}).Format(w, data)
 	}
