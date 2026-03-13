@@ -80,8 +80,12 @@ func ExecuteSpec(ctx context.Context, cmd *cobra.Command, spec *docs.EndpointSpe
 	// Inject global path params (project_id, workspace_slug) when spec has them as body params
 	body = injectGlobalBodyParams(body, spec, client.Workspace, projectID)
 
-	// Extract many-to-many relation params before sending the request
-	relations := extractRelationParams(body)
+	// Extract many-to-many relation params before sending POST requests.
+	// Only extract for POST — PATCH/PUT may legitimately include these fields.
+	var relations map[string]string
+	if spec.Method == "POST" {
+		relations = extractRelationParams(body)
+	}
 
 	// Execute the request
 	var respBody []byte
@@ -123,15 +127,15 @@ func ExecuteSpec(ctx context.Context, cmd *cobra.Command, spec *docs.EndpointSpe
 		return err
 	}
 
+	if len(respBody) == 0 {
+		return nil
+	}
+
 	// Handle post-creation actions for many-to-many relations
-	if spec.Method == "POST" && len(relations) > 0 {
+	if len(relations) > 0 {
 		if err := postCreateActions(ctx, relations, respBody, client, projectID); err != nil {
 			return err
 		}
-	}
-
-	if len(respBody) == 0 {
-		return nil
 	}
 
 	return formatResponse(respBody, deps)
@@ -168,8 +172,12 @@ func ExecuteSpecFromArgs(ctx context.Context, spec *docs.EndpointSpec, parsed *P
 	body := collectBodyParamsFromArgs(spec, parsed, deps)
 	body = injectGlobalBodyParams(body, spec, client.Workspace, projectID)
 
-	// Extract many-to-many relation params before sending the request
-	relations := extractRelationParams(body)
+	// Extract many-to-many relation params before sending POST requests.
+	// Only extract for POST — PATCH/PUT may legitimately include these fields.
+	var relations map[string]string
+	if spec.Method == "POST" {
+		relations = extractRelationParams(body)
+	}
 
 	// Execute
 	var respBody []byte
@@ -208,15 +216,15 @@ func ExecuteSpecFromArgs(ctx context.Context, spec *docs.EndpointSpec, parsed *P
 		return err
 	}
 
+	if len(respBody) == 0 {
+		return nil
+	}
+
 	// Handle post-creation actions for many-to-many relations
-	if spec.Method == "POST" && len(relations) > 0 {
+	if len(relations) > 0 {
 		if err := postCreateActions(ctx, relations, respBody, client, projectID); err != nil {
 			return err
 		}
-	}
-
-	if len(respBody) == 0 {
-		return nil
 	}
 
 	return formatResponse(respBody, deps)
