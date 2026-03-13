@@ -1,7 +1,13 @@
 package cmdgen
 
 import (
+	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+
+	"github.com/mggarofalo/plane-cli/internal/api"
 )
 
 func TestExtractRelationParams(t *testing.T) {
@@ -159,6 +165,113 @@ func TestExtractCreatedID(t *testing.T) {
 
 		if err == nil {
 			t.Fatal("expected error, got nil")
+		}
+	})
+}
+
+func TestResolveSliceIfNeeded(t *testing.T) {
+	uuid1 := "550e8400-e29b-41d4-a716-446655440000"
+	uuid2 := "660e8400-e29b-41d4-a716-446655440000"
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/workspaces/test-ws/work-items/PROJ-1/":
+			fmt.Fprintf(w, `{"id": "%s"}`, uuid1)
+		case "/api/v1/workspaces/test-ws/work-items/PROJ-2/":
+			fmt.Fprintf(w, `{"id": "%s"}`, uuid2)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			fmt.Fprint(w, `{"detail": "not found"}`)
+		}
+	}))
+	defer srv.Close()
+
+	isUUID := func(s string) bool { return len(s) == 36 && s[8] == '-' }
+
+	deps := &Deps{
+		NewClient: func() (*api.Client, error) {
+			return api.NewClient(srv.URL, "test-token", "test-ws", false, nil), nil
+		},
+		RequireWorkspace: func(c *api.Client) error { return nil },
+		IsUUID:           isUUID,
+	}
+
+	t.Run("resolves sequence IDs in slice", func(t *testing.T) {
+		input := []string{"PROJ-1", "PROJ-2"}
+		result := resolveSliceIfNeeded(context.Background(), input, "issues", deps)
+		if result[0] != uuid1 {
+			t.Errorf("expected %s, got %s", uuid1, result[0])
+		}
+		if result[1] != uuid2 {
+			t.Errorf("expected %s, got %s", uuid2, result[1])
+		}
+	})
+
+	t.Run("passes through UUIDs unchanged", func(t *testing.T) {
+		input := []string{uuid1}
+		result := resolveSliceIfNeeded(context.Background(), input, "issues", deps)
+		if result[0] != uuid1 {
+			t.Errorf("expected %s, got %s", uuid1, result[0])
+		}
+	})
+
+	t.Run("leaves unresolvable values unchanged", func(t *testing.T) {
+		input := []string{"PROJ-999"}
+		result := resolveSliceIfNeeded(context.Background(), input, "issues", deps)
+		if result[0] != "PROJ-999" {
+			t.Errorf("expected PROJ-999, got %s", result[0])
+		}
+	})
+}
+
+func TestResolveIfNeeded_SequenceID(t *testing.T) {
+	uuid := "550e8400-e29b-41d4-a716-446655440000"
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/workspaces/test-ws/work-items/PROJ-42/" {
+			fmt.Fprintf(w, `{"id": "%s"}`, uuid)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	isUUID := func(s string) bool { return len(s) == 36 && s[8] == '-' }
+
+	deps := &Deps{
+		NewClient: func() (*api.Client, error) {
+			return api.NewClient(srv.URL, "test-token", "test-ws", false, nil), nil
+		},
+		RequireWorkspace: func(c *api.Client) error { return nil },
+		IsUUID:           isUUID,
+	}
+
+	t.Run("resolves sequence ID for work_item_id", func(t *testing.T) {
+		result := resolveIfNeeded(context.Background(), "PROJ-42", "work_item_id", nil, "", deps)
+		if result != uuid {
+			t.Errorf("expected %s, got %s", uuid, result)
+		}
+	})
+
+	t.Run("resolves sequence ID for parent", func(t *testing.T) {
+		result := resolveIfNeeded(context.Background(), "PROJ-42", "parent", nil, "", deps)
+		if result != uuid {
+			t.Errorf("expected %s, got %s", uuid, result)
+		}
+	})
+
+	t.Run("does not resolve sequence ID for non-issue params", func(t *testing.T) {
+		result := resolveIfNeeded(context.Background(), "PROJ-42", "state", nil, "", deps)
+		// Should not resolve — "state" is not an issue ref param, and PROJ-42 is not a state name
+		if result == uuid {
+			t.Error("should not have resolved sequence ID for state param")
+		}
+	})
+
+	t.Run("passes through UUIDs", func(t *testing.T) {
+		result := resolveIfNeeded(context.Background(), uuid, "work_item_id", nil, "", deps)
+		if result != uuid {
+			t.Errorf("expected %s, got %s", uuid, result)
 		}
 	})
 }

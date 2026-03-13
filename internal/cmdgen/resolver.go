@@ -4,10 +4,50 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/mggarofalo/plane-cli/internal/api"
 )
+
+// sequenceIDRe matches identifiers like "PROJ-123" or "RECEIPTS-351".
+var sequenceIDRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]*-\d+$`)
+
+// IsSequenceID returns true if s looks like a Plane sequence ID (e.g. "PROJ-42").
+func IsSequenceID(s string) bool {
+	return sequenceIDRe.MatchString(s)
+}
+
+// ResolveSequenceID resolves a sequence ID like "PROJ-42" to a full UUID
+// by calling the work-items lookup endpoint.
+func ResolveSequenceID(ctx context.Context, sequenceID string, deps *Deps) (string, error) {
+	client, err := deps.NewClient()
+	if err != nil {
+		return "", err
+	}
+	if err := deps.RequireWorkspace(client); err != nil {
+		return "", err
+	}
+
+	lookupURL := fmt.Sprintf("%s/api/v1/workspaces/%s/work-items/%s/",
+		client.BaseURL, client.Workspace, sequenceID)
+
+	respBody, err := client.Get(ctx, lookupURL)
+	if err != nil {
+		return "", fmt.Errorf("resolving sequence ID %q: %w", sequenceID, err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return "", fmt.Errorf("parsing sequence ID response for %q: %w", sequenceID, err)
+	}
+
+	id, ok := result["id"].(string)
+	if !ok || id == "" {
+		return "", fmt.Errorf("sequence ID %q: response missing 'id' field", sequenceID)
+	}
+	return id, nil
+}
 
 // ResolveNameToUUID resolves a human-readable name to a UUID by finding the
 // corresponding resource's list endpoint and searching for a match.
