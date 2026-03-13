@@ -9,16 +9,15 @@ Commands are dynamically generated from the Plane API documentation, so the CLI 
 ### From source
 
 ```bash
-go install github.com/mggarofalo/plane-cli@latest
+git clone https://github.com/mggarofalo/plane-cli.git
+cd plane-cli
+make install  # builds and installs "plane" to $GOPATH/bin
 ```
 
 ### Build locally
 
 ```bash
-git clone https://github.com/mggarofalo/plane-cli.git
-cd plane-cli
-make build    # output: bin/plane
-make install  # installs to $GOPATH/bin
+make build    # output: bin/plane (bin/plane.exe on Windows)
 ```
 
 ### Prebuilt binaries
