@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/mggarofalo/plane-cli/internal/api"
+	"github.com/mggarofalo/plane-cli/internal/docs"
+	"github.com/mggarofalo/plane-cli/internal/output"
 )
 
 func TestExtractRelationParams(t *testing.T) {
@@ -274,6 +276,211 @@ func TestResolveIfNeeded_SequenceID(t *testing.T) {
 			t.Errorf("expected %s, got %s", uuid, result)
 		}
 	})
+}
+
+func TestIsDryRun(t *testing.T) {
+	t.Run("returns false when nil", func(t *testing.T) {
+		deps := &Deps{}
+		if isDryRun(deps) {
+			t.Error("expected false for nil FlagDryRun")
+		}
+	})
+
+	t.Run("returns false when false", func(t *testing.T) {
+		f := false
+		deps := &Deps{FlagDryRun: &f}
+		if isDryRun(deps) {
+			t.Error("expected false")
+		}
+	})
+
+	t.Run("returns true when true", func(t *testing.T) {
+		f := true
+		deps := &Deps{FlagDryRun: &f}
+		if !isDryRun(deps) {
+			t.Error("expected true")
+		}
+	})
+}
+
+func TestSnapshotBody(t *testing.T) {
+	t.Run("returns nil for nil body", func(t *testing.T) {
+		if snapshotBody(nil) != nil {
+			t.Error("expected nil")
+		}
+	})
+
+	t.Run("snapshot is independent of original", func(t *testing.T) {
+		original := map[string]any{
+			"name":   "Test",
+			"module": "mod-uuid",
+		}
+		snap := snapshotBody(original)
+
+		// Mutate original
+		delete(original, "module")
+
+		if _, ok := snap["module"]; !ok {
+			t.Error("snapshot should still have 'module' after original was mutated")
+		}
+	})
+}
+
+func TestDryRun_POST(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("HTTP request should not be made in dry-run mode")
+	}))
+	defer srv.Close()
+
+	dryRun := true
+	deps := &Deps{
+		NewClient: func() (*api.Client, error) {
+			return api.NewClient(srv.URL, "test-token", "test-ws", false, nil), nil
+		},
+		RequireWorkspace: func(c *api.Client) error { return nil },
+		RequireProject:   func() (string, error) { return "proj-uuid", nil },
+		PaginationParams: func() api.PaginationParams { return api.PaginationParams{PerPage: 100} },
+		Formatter:        func() output.Formatter { return output.New("json") },
+		IsUUID:           func(s string) bool { return len(s) == 36 && s[8] == '-' },
+		FlagDryRun:       &dryRun,
+	}
+
+	spec := &docs.EndpointSpec{
+		Method:       "POST",
+		PathTemplate: "/api/v1/workspaces/{workspace_slug}/projects/{project_id}/work-items/",
+		EntryTitle:   "Create Work Item",
+	}
+
+	parsed := &ParsedArgs{
+		Values: map[string]string{"name": "Test Issue"},
+		Slices: map[string][]string{},
+	}
+
+	err := ExecuteSpecFromArgs(context.Background(), spec, parsed, deps)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDryRun_POST_WithRelations(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("HTTP request should not be made in dry-run mode")
+	}))
+	defer srv.Close()
+
+	dryRun := true
+	deps := &Deps{
+		NewClient: func() (*api.Client, error) {
+			return api.NewClient(srv.URL, "test-token", "test-ws", false, nil), nil
+		},
+		RequireWorkspace: func(c *api.Client) error { return nil },
+		RequireProject:   func() (string, error) { return "proj-uuid", nil },
+		PaginationParams: func() api.PaginationParams { return api.PaginationParams{PerPage: 100} },
+		Formatter:        func() output.Formatter { return output.New("json") },
+		IsUUID:           func(s string) bool { return len(s) == 36 && s[8] == '-' },
+		FlagDryRun:       &dryRun,
+	}
+
+	spec := &docs.EndpointSpec{
+		Method:       "POST",
+		PathTemplate: "/api/v1/workspaces/{workspace_slug}/projects/{project_id}/work-items/",
+		EntryTitle:   "Create Work Item",
+		Params: []docs.ParamSpec{
+			{Name: "name", Location: docs.ParamBody, Type: "string"},
+			{Name: "module", Location: docs.ParamBody, Type: "string"},
+		},
+	}
+
+	parsed := &ParsedArgs{
+		Values: map[string]string{"name": "Test Issue", "module": "550e8400-e29b-41d4-a716-446655440000"},
+		Slices: map[string][]string{},
+	}
+
+	err := ExecuteSpecFromArgs(context.Background(), spec, parsed, deps)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDryRun_DELETE(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("HTTP request should not be made in dry-run mode")
+	}))
+	defer srv.Close()
+
+	dryRun := true
+	deps := &Deps{
+		NewClient: func() (*api.Client, error) {
+			return api.NewClient(srv.URL, "test-token", "test-ws", false, nil), nil
+		},
+		RequireWorkspace: func(c *api.Client) error { return nil },
+		RequireProject:   func() (string, error) { return "proj-uuid", nil },
+		PaginationParams: func() api.PaginationParams { return api.PaginationParams{PerPage: 100} },
+		Formatter:        func() output.Formatter { return output.New("json") },
+		IsUUID:           func(s string) bool { return len(s) == 36 && s[8] == '-' },
+		FlagDryRun:       &dryRun,
+	}
+
+	spec := &docs.EndpointSpec{
+		Method:       "DELETE",
+		PathTemplate: "/api/v1/workspaces/{workspace_slug}/projects/{project_id}/work-items/{work_item_id}/",
+		EntryTitle:   "Delete Work Item",
+		Params: []docs.ParamSpec{
+			{Name: "work_item_id", Location: docs.ParamPath, Type: "string", Required: true},
+		},
+	}
+
+	parsed := &ParsedArgs{
+		Values: map[string]string{"work-item-id": "550e8400-e29b-41d4-a716-446655440000"},
+		Slices: map[string][]string{},
+	}
+
+	err := ExecuteSpecFromArgs(context.Background(), spec, parsed, deps)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDryRun_GET_StillExecutes(t *testing.T) {
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, `{"results": [], "total_pages": 1}`)
+	}))
+	defer srv.Close()
+
+	dryRun := true
+	deps := &Deps{
+		NewClient: func() (*api.Client, error) {
+			return api.NewClient(srv.URL, "test-token", "test-ws", false, nil), nil
+		},
+		RequireWorkspace: func(c *api.Client) error { return nil },
+		RequireProject:   func() (string, error) { return "proj-uuid", nil },
+		PaginationParams: func() api.PaginationParams { return api.PaginationParams{PerPage: 100} },
+		Formatter:        func() output.Formatter { return output.New("json") },
+		IsUUID:           func(s string) bool { return len(s) == 36 && s[8] == '-' },
+		FlagDryRun:       &dryRun,
+	}
+
+	spec := &docs.EndpointSpec{
+		Method:       "GET",
+		PathTemplate: "/api/v1/workspaces/{workspace_slug}/projects/{project_id}/work-items/",
+		EntryTitle:   "List Work Items",
+	}
+
+	parsed := &ParsedArgs{
+		Values: map[string]string{},
+		Slices: map[string][]string{},
+	}
+
+	err := ExecuteSpecFromArgs(context.Background(), spec, parsed, deps)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !called {
+		t.Error("GET request should still be made even with dry-run flag")
+	}
 }
 
 func TestPostCreateActions_GracefulWarnings(t *testing.T) {

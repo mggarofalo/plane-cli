@@ -44,8 +44,52 @@ type Deps struct {
 	IsUUID           UUIDChecker
 	FlagAll          *bool
 	FlagPerPage      *int
+	FlagDryRun       *bool
 	Profile          string
 	BaseURL          string
+}
+
+// isDryRun returns true when the dry-run flag is set. Nil-safe.
+func isDryRun(deps *Deps) bool {
+	return deps.FlagDryRun != nil && *deps.FlagDryRun
+}
+
+// snapshotBody returns a shallow copy of body so the original is preserved
+// before extractRelationParams mutates it.
+func snapshotBody(body map[string]any) map[string]any {
+	if body == nil {
+		return nil
+	}
+	cp := make(map[string]any, len(body))
+	for k, v := range body {
+		cp[k] = v
+	}
+	return cp
+}
+
+// printDryRun writes the would-be request details to stderr.
+func printDryRun(method, reqURL string, body map[string]any, relations map[string]string, workspace, projectID string) {
+	fmt.Fprintf(os.Stderr, "DRY RUN: %s %s\n", method, reqURL)
+
+	if body != nil && method != "DELETE" {
+		data, err := json.MarshalIndent(body, "", "  ")
+		if err == nil {
+			fmt.Fprintf(os.Stderr, "Body: %s\n", data)
+		}
+	}
+
+	for kind, id := range relations {
+		var endpoint string
+		switch kind {
+		case "module":
+			endpoint = fmt.Sprintf("/api/v1/workspaces/%s/projects/%s/modules/%s/module-issues/", workspace, projectID, id)
+		case "cycle":
+			endpoint = fmt.Sprintf("/api/v1/workspaces/%s/projects/%s/cycles/%s/cycle-issues/", workspace, projectID, id)
+		}
+		if endpoint != "" {
+			fmt.Fprintf(os.Stderr, "(would also call: POST %s with {\"issues\":[\"<new-issue-id>\"]})\n", endpoint)
+		}
+	}
 }
 
 // ExecuteSpec runs an API call based on the endpoint spec and cobra flags.
@@ -80,11 +124,23 @@ func ExecuteSpec(ctx context.Context, cmd *cobra.Command, spec *docs.EndpointSpe
 	// Inject global path params (project_id, workspace_slug) when spec has them as body params
 	body = injectGlobalBodyParams(body, spec, client.Workspace, projectID)
 
+	// Snapshot body before relation extraction mutates it (for dry-run output)
+	var snapshot map[string]any
+	if isDryRun(deps) && spec.Method != "GET" {
+		snapshot = snapshotBody(body)
+	}
+
 	// Extract many-to-many relation params before sending POST requests.
 	// Only extract for POST — PATCH/PUT may legitimately include these fields.
 	var relations map[string]string
 	if spec.Method == "POST" {
 		relations = extractRelationParams(body)
+	}
+
+	// Dry-run: print what would be sent and return early
+	if isDryRun(deps) && spec.Method != "GET" {
+		printDryRun(spec.Method, reqURL, snapshot, relations, client.Workspace, projectID)
+		return nil
 	}
 
 	// Execute the request
@@ -175,11 +231,23 @@ func ExecuteSpecFromArgs(ctx context.Context, spec *docs.EndpointSpec, parsed *P
 	body := collectBodyParamsFromArgs(ctx, spec, parsed, deps)
 	body = injectGlobalBodyParams(body, spec, client.Workspace, projectID)
 
+	// Snapshot body before relation extraction mutates it (for dry-run output)
+	var snapshot map[string]any
+	if isDryRun(deps) && spec.Method != "GET" {
+		snapshot = snapshotBody(body)
+	}
+
 	// Extract many-to-many relation params before sending POST requests.
 	// Only extract for POST — PATCH/PUT may legitimately include these fields.
 	var relations map[string]string
 	if spec.Method == "POST" {
 		relations = extractRelationParams(body)
+	}
+
+	// Dry-run: print what would be sent and return early
+	if isDryRun(deps) && spec.Method != "GET" {
+		printDryRun(spec.Method, reqURL, snapshot, relations, client.Workspace, projectID)
+		return nil
 	}
 
 	// Execute
@@ -771,4 +839,5 @@ func GenerateHelp(w io.Writer, topicName, cmdName string, spec *docs.EndpointSpe
 	fmt.Fprintln(w, "  -p, --project\t\tProject ID or identifier")
 	fmt.Fprintln(w, "  -o, --output\t\tOutput format: json, table")
 	fmt.Fprintln(w, "      --all\t\tAuto-paginate and return all results")
+	fmt.Fprintln(w, "  -n, --dry-run\t\tPrint request details without executing")
 }
