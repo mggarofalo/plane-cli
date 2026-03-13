@@ -131,14 +131,17 @@ func ExecuteSpec(ctx context.Context, cmd *cobra.Command, spec *docs.EndpointSpe
 		return nil
 	}
 
-	// Handle post-creation actions for many-to-many relations
-	if len(relations) > 0 {
-		if err := postCreateActions(ctx, relations, respBody, client, projectID); err != nil {
-			return err
-		}
+	// Always show the created resource, even if post-creation attach fails.
+	if err := formatResponse(respBody, deps); err != nil {
+		return err
 	}
 
-	return formatResponse(respBody, deps)
+	// Handle post-creation actions for many-to-many relations
+	if len(relations) > 0 {
+		postCreateActions(ctx, relations, respBody, client, projectID)
+	}
+
+	return nil
 }
 
 // ExecuteSpecFromArgs runs an API call using manually parsed args (Mode B).
@@ -220,14 +223,17 @@ func ExecuteSpecFromArgs(ctx context.Context, spec *docs.EndpointSpec, parsed *P
 		return nil
 	}
 
-	// Handle post-creation actions for many-to-many relations
-	if len(relations) > 0 {
-		if err := postCreateActions(ctx, relations, respBody, client, projectID); err != nil {
-			return err
-		}
+	// Always show the created resource, even if post-creation attach fails.
+	if err := formatResponse(respBody, deps); err != nil {
+		return err
 	}
 
-	return formatResponse(respBody, deps)
+	// Handle post-creation actions for many-to-many relations
+	if len(relations) > 0 {
+		postCreateActions(ctx, relations, respBody, client, projectID)
+	}
+
+	return nil
 }
 
 func buildURL(client *api.Client, spec *docs.EndpointSpec, cmd *cobra.Command, projectID string, deps *Deps) (string, error) {
@@ -686,11 +692,13 @@ func extractCreatedID(respBody []byte) (string, error) {
 
 // postCreateActions performs follow-up API calls to attach a newly created issue
 // to modules and/or cycles. The Plane API requires separate endpoints for these
-// many-to-many relationships.
-func postCreateActions(ctx context.Context, relations map[string]string, respBody []byte, client *api.Client, projectID string) error {
+// many-to-many relationships. Failures are printed as warnings to stderr; the
+// created issue is never rolled back.
+func postCreateActions(ctx context.Context, relations map[string]string, respBody []byte, client *api.Client, projectID string) {
 	issueID, err := extractCreatedID(respBody)
 	if err != nil {
-		return err
+		fmt.Fprintf(os.Stderr, "Warning: issue created but could not extract ID for relation attach: %v\n", err)
+		return
 	}
 
 	payload := map[string]any{
@@ -701,21 +709,21 @@ func postCreateActions(ctx context.Context, relations map[string]string, respBod
 		moduleURL := fmt.Sprintf("%s/api/v1/workspaces/%s/projects/%s/modules/%s/module-issues/",
 			client.BaseURL, client.Workspace, projectID, moduleID)
 		if _, err := client.Post(ctx, moduleURL, payload); err != nil {
-			return fmt.Errorf("adding issue to module: %w", err)
+			fmt.Fprintf(os.Stderr, "Warning: issue created but failed to add to module: %v\n", err)
+		} else {
+			fmt.Fprintln(os.Stderr, "Added to module.")
 		}
-		fmt.Fprintln(os.Stderr, "Added to module.")
 	}
 
 	if cycleID, ok := relations["cycle"]; ok {
 		cycleURL := fmt.Sprintf("%s/api/v1/workspaces/%s/projects/%s/cycles/%s/cycle-issues/",
 			client.BaseURL, client.Workspace, projectID, cycleID)
 		if _, err := client.Post(ctx, cycleURL, payload); err != nil {
-			return fmt.Errorf("adding issue to cycle: %w", err)
+			fmt.Fprintf(os.Stderr, "Warning: issue created but failed to add to cycle: %v\n", err)
+		} else {
+			fmt.Fprintln(os.Stderr, "Added to cycle.")
 		}
-		fmt.Fprintln(os.Stderr, "Added to cycle.")
 	}
-
-	return nil
 }
 
 // GenerateHelp prints help text for a spec.

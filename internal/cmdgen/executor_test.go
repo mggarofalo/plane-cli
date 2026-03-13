@@ -275,3 +275,73 @@ func TestResolveIfNeeded_SequenceID(t *testing.T) {
 		}
 	})
 }
+
+func TestPostCreateActions_GracefulWarnings(t *testing.T) {
+	issueResp := []byte(`{"id": "issue-uuid-1", "name": "Test"}`)
+
+	t.Run("warns on module attach failure", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprint(w, `{"error": "server error"}`)
+		}))
+		defer srv.Close()
+
+		client := api.NewClient(srv.URL, "test-token", "test-ws", false, nil)
+		relations := map[string]string{"module": "mod-uuid"}
+
+		// Should not panic; warnings go to stderr
+		postCreateActions(context.Background(), relations, issueResp, client, "proj-uuid")
+	})
+
+	t.Run("warns on cycle attach failure", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprint(w, `{"error": "server error"}`)
+		}))
+		defer srv.Close()
+
+		client := api.NewClient(srv.URL, "test-token", "test-ws", false, nil)
+		relations := map[string]string{"cycle": "cyc-uuid"}
+
+		postCreateActions(context.Background(), relations, issueResp, client, "proj-uuid")
+	})
+
+	t.Run("warns on extractCreatedID failure", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			t.Fatal("should not make API calls when ID extraction fails")
+		}))
+		defer srv.Close()
+
+		client := api.NewClient(srv.URL, "test-token", "test-ws", false, nil)
+		relations := map[string]string{"module": "mod-uuid"}
+
+		postCreateActions(context.Background(), relations, []byte(`not json`), client, "proj-uuid")
+	})
+
+	t.Run("succeeds when endpoints return 200", func(t *testing.T) {
+		var moduleCalled, cycleCalled bool
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/api/v1/workspaces/test-ws/projects/proj-uuid/modules/mod-uuid/module-issues/" {
+				moduleCalled = true
+			}
+			if r.URL.Path == "/api/v1/workspaces/test-ws/projects/proj-uuid/cycles/cyc-uuid/cycle-issues/" {
+				cycleCalled = true
+			}
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, `{}`)
+		}))
+		defer srv.Close()
+
+		client := api.NewClient(srv.URL, "test-token", "test-ws", false, nil)
+		relations := map[string]string{"module": "mod-uuid", "cycle": "cyc-uuid"}
+
+		postCreateActions(context.Background(), relations, issueResp, client, "proj-uuid")
+
+		if !moduleCalled {
+			t.Error("expected module endpoint to be called")
+		}
+		if !cycleCalled {
+			t.Error("expected cycle endpoint to be called")
+		}
+	})
+}
