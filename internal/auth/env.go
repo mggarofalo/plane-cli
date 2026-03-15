@@ -16,7 +16,9 @@ const (
 )
 
 // EnvSource reads credentials from environment variables.
-type EnvSource struct{}
+type EnvSource struct {
+	Quiet bool
+}
 
 // Resolve returns a Credential from the PLANE_API_KEY env var, or empty if unset.
 // Warns on stderr if running in a TTY (interactive) session.
@@ -31,7 +33,7 @@ func (e *EnvSource) Resolve() (Credential, error) {
 	}
 
 	// Warn if running interactively — env vars are visible in process listings
-	if term.IsTerminal(int(os.Stdin.Fd())) {
+	if !e.Quiet && term.IsTerminal(int(os.Stdin.Fd())) {
 		fmt.Fprintf(os.Stderr, "Warning: using %s environment variable. Consider 'plane auth login' for secure storage.\n", EnvAPIKey)
 	}
 

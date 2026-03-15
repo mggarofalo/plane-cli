@@ -23,6 +23,7 @@ var (
 	flagAPIURL    string
 	flagAPIKey    string
 	flagVerbose   bool
+	flagQuiet     bool
 	flagPerPage   int
 	flagCursor    string
 	flagAll       bool
@@ -51,6 +52,7 @@ func init() {
 	pf.StringVar(&flagAPIURL, "api-url", "", "Base API URL")
 	pf.StringVar(&flagAPIKey, "api-key", "", "API key (prefer keyring or env var)")
 	pf.BoolVar(&flagVerbose, "verbose", false, "Debug HTTP logging (tokens redacted)")
+	pf.BoolVarP(&flagQuiet, "quiet", "q", false, "Suppress informational stderr messages")
 	pf.IntVar(&flagPerPage, "per-page", 100, "Items per page (max 100)")
 	pf.StringVar(&flagCursor, "cursor", "", "Pagination cursor")
 	pf.BoolVar(&flagAll, "all", false, "Auto-paginate and return all results")
@@ -119,6 +121,7 @@ func registerDynamicCommands() {
 		FlagDryRun:       &flagDryRun,
 		FlagField:        &flagField,
 		FlagFields:       &flagFields,
+		FlagQuiet:        &flagQuiet,
 		Profile:          profile,
 		BaseURL:          docsURL,
 	}
@@ -165,7 +168,7 @@ func NewClient() (*api.Client, error) {
 
 	resolver := &auth.Resolver{
 		FlagToken: flagAPIKey,
-		Env:       &auth.EnvSource{},
+		Env:       &auth.EnvSource{Quiet: flagQuiet},
 		Config:    cfg,
 	}
 
