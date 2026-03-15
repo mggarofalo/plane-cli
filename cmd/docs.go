@@ -307,11 +307,12 @@ func fetchAndPrintSpec(ctx context.Context, topicName string, entry docs.Entry) 
 	}
 
 	profile := cfg.ActiveProfile
-	cmdName := cmdgen.DeriveSubcommandName(entry.Title, topicName)
 
-	// Try the spec cache first
-	if cmdName != "" {
-		if cached, err := docs.LoadSpec(profile, topicName, cmdName); err == nil && cached != nil {
+	// Try the spec cache first. Use SpecFileName (same key WriteSpec uses)
+	// rather than DeriveSubcommandName (which strips topic aliases).
+	cacheKey := docs.SpecFileName(entry.Title)
+	if cacheKey != "" {
+		if cached, err := docs.LoadSpec(profile, topicName, cacheKey); err == nil && cached != nil {
 			return printSpecJSON(&cached.Spec)
 		}
 	}

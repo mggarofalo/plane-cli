@@ -60,7 +60,7 @@ func WriteSpec(profile, baseURL string, spec *EndpointSpec) error {
 		return err
 	}
 
-	cmdName := specFileName(spec.EntryTitle)
+	cmdName := SpecFileName(spec.EntryTitle)
 	topicDir := filepath.Join(dir, spec.TopicName)
 	if err := os.MkdirAll(topicDir, 0700); err != nil {
 		return fmt.Errorf("creating spec cache dir: %w", err)
@@ -139,8 +139,9 @@ func ListCachedTopics(profile string) ([]string, error) {
 	return topics, nil
 }
 
-// specFileName derives a cache file name from an entry title.
-func specFileName(entryTitle string) string {
+// SpecFileName derives a cache file name from an entry title.
+// Exported so callers can look up specs by entry title.
+func SpecFileName(entryTitle string) string {
 	lower := strings.ToLower(entryTitle)
 	lower = strings.Map(func(r rune) rune {
 		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
