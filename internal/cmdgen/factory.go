@@ -54,6 +54,13 @@ func BuildTopicCommand(topicName string, topic *docs.Topic, cachedSpecs []docs.C
 		}
 	}
 
+	// Register ensure subcommand if the topic has the required specs
+	if TopicSupportsEnsure(topicName) {
+		if specs := findEnsureSpecs(topicName, cachedSpecs); specs != nil {
+			cmd.AddCommand(BuildEnsureCommand(topicName, specs, deps))
+		}
+	}
+
 	return cmd
 }
 
