@@ -497,7 +497,7 @@ func TestPostCreateActions_GracefulWarnings(t *testing.T) {
 		relations := map[string]string{"module": "mod-uuid"}
 
 		// Should not panic; warnings go to stderr
-		postCreateActions(context.Background(), relations, issueResp, client, "proj-uuid")
+		postCreateActions(context.Background(), relations, issueResp, client, "proj-uuid", &Deps{})
 	})
 
 	t.Run("warns on cycle attach failure", func(t *testing.T) {
@@ -510,7 +510,7 @@ func TestPostCreateActions_GracefulWarnings(t *testing.T) {
 		client := api.NewClient(srv.URL, "test-token", "test-ws", false, nil)
 		relations := map[string]string{"cycle": "cyc-uuid"}
 
-		postCreateActions(context.Background(), relations, issueResp, client, "proj-uuid")
+		postCreateActions(context.Background(), relations, issueResp, client, "proj-uuid", &Deps{})
 	})
 
 	t.Run("warns on extractCreatedID failure", func(t *testing.T) {
@@ -522,7 +522,7 @@ func TestPostCreateActions_GracefulWarnings(t *testing.T) {
 		client := api.NewClient(srv.URL, "test-token", "test-ws", false, nil)
 		relations := map[string]string{"module": "mod-uuid"}
 
-		postCreateActions(context.Background(), relations, []byte(`not json`), client, "proj-uuid")
+		postCreateActions(context.Background(), relations, []byte(`not json`), client, "proj-uuid", &Deps{})
 	})
 
 	t.Run("succeeds when endpoints return 200", func(t *testing.T) {
@@ -542,7 +542,7 @@ func TestPostCreateActions_GracefulWarnings(t *testing.T) {
 		client := api.NewClient(srv.URL, "test-token", "test-ws", false, nil)
 		relations := map[string]string{"module": "mod-uuid", "cycle": "cyc-uuid"}
 
-		postCreateActions(context.Background(), relations, issueResp, client, "proj-uuid")
+		postCreateActions(context.Background(), relations, issueResp, client, "proj-uuid", &Deps{})
 
 		if !moduleCalled {
 			t.Error("expected module endpoint to be called")
@@ -551,4 +551,105 @@ func TestPostCreateActions_GracefulWarnings(t *testing.T) {
 			t.Error("expected cycle endpoint to be called")
 		}
 	})
+}
+
+func TestIsQuiet(t *testing.T) {
+	t.Run("returns false when deps is nil", func(t *testing.T) {
+		if IsQuiet(nil) {
+			t.Error("expected false for nil deps")
+		}
+	})
+
+	t.Run("returns false when FlagQuiet is nil", func(t *testing.T) {
+		deps := &Deps{}
+		if IsQuiet(deps) {
+			t.Error("expected false for nil FlagQuiet")
+		}
+	})
+
+	t.Run("returns false when false", func(t *testing.T) {
+		f := false
+		deps := &Deps{FlagQuiet: &f}
+		if IsQuiet(deps) {
+			t.Error("expected false")
+		}
+	})
+
+	t.Run("returns true when true", func(t *testing.T) {
+		f := true
+		deps := &Deps{FlagQuiet: &f}
+		if !IsQuiet(deps) {
+			t.Error("expected true")
+		}
+	})
+}
+
+func TestInfof_Quiet(t *testing.T) {
+	t.Run("suppresses output when quiet", func(t *testing.T) {
+		q := true
+		deps := &Deps{FlagQuiet: &q}
+		// Infof writes to os.Stderr; in quiet mode it should be a no-op.
+		// If it panics or errors, the test fails. We can't easily capture
+		// stderr in a unit test, but we verify it doesn't crash.
+		Infof(deps, "should not appear: %s\n", "test")
+	})
+
+	t.Run("does not suppress when not quiet", func(t *testing.T) {
+		q := false
+		deps := &Deps{FlagQuiet: &q}
+		Infof(deps, "should appear: %s\n", "test")
+	})
+
+	t.Run("does not suppress when nil", func(t *testing.T) {
+		deps := &Deps{}
+		Infof(deps, "should appear: %s\n", "test")
+	})
+}
+
+func TestQuiet_DELETE_SuppressesDeleted(t *testing.T) {
+	deleteCalled := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "DELETE" {
+			deleteCalled = true
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	quiet := true
+	deps := &Deps{
+		NewClient: func() (*api.Client, error) {
+			return api.NewClient(srv.URL, "test-token", "test-ws", false, nil), nil
+		},
+		RequireWorkspace: func(c *api.Client) error { return nil },
+		RequireProject:   func() (string, error) { return "proj-uuid", nil },
+		PaginationParams: func() api.PaginationParams { return api.PaginationParams{PerPage: 100} },
+		Formatter:        func() output.Formatter { return output.New("json") },
+		IsUUID:           func(s string) bool { return len(s) == 36 && s[8] == '-' },
+		FlagQuiet:        &quiet,
+	}
+
+	spec := &docs.EndpointSpec{
+		Method:       "DELETE",
+		PathTemplate: "/api/v1/workspaces/{workspace_slug}/projects/{project_id}/work-items/{work_item_id}/",
+		EntryTitle:   "Delete Work Item",
+		Params: []docs.ParamSpec{
+			{Name: "work_item_id", Location: docs.ParamPath, Type: "string", Required: true},
+		},
+	}
+
+	parsed := &ParsedArgs{
+		Values: map[string]string{"work-item-id": "550e8400-e29b-41d4-a716-446655440000"},
+		Slices: map[string][]string{},
+	}
+
+	err := ExecuteSpecFromArgs(context.Background(), spec, parsed, deps)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !deleteCalled {
+		t.Error("expected DELETE request to be made")
+	}
 }

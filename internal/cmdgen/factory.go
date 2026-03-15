@@ -62,6 +62,7 @@ func BuildTopicCommand(topicName string, topic *docs.Topic, cachedSpecs []docs.C
 var globalFlagNames = map[string]bool{
 	"workspace": true, "project": true, "output": true,
 	"api-url": true, "api-key": true, "verbose": true,
+	"quiet": true,
 	"per-page": true, "cursor": true, "all": true,
 	"dry-run": true, "help": true,
 	"field": true, "fields": true,
@@ -138,7 +139,7 @@ func BuildLazyCommand(topicName, cmdName string, entry docs.Entry, deps *Deps) *
 				return lazyHelp(cmd, topicName, cmdName, entry, deps)
 			}
 
-			fmt.Fprintf(os.Stderr, "Fetching API spec for '%s %s'...\n", topicName, cmdName)
+			Infof(deps, "Fetching API spec for '%s %s'...\n", topicName, cmdName)
 
 			spec, err := fetchAndCacheSpec(cmd.Context(), topicName, entry, deps)
 			if err != nil {
@@ -159,14 +160,14 @@ func BuildLazyCommand(topicName, cmdName string, entry docs.Entry, deps *Deps) *
 				return err
 			}
 
-			fmt.Fprintf(os.Stderr, "hint: spec cached for 'plane %s %s'. Run again for full flag support and --help.\n", topicName, cmdName)
+			Infof(deps, "hint: spec cached for 'plane %s %s'. Run again for full flag support and --help.\n", topicName, cmdName)
 			return nil
 		},
 	}
 }
 
 func lazyHelp(cmd *cobra.Command, topicName, cmdName string, entry docs.Entry, deps *Deps) error {
-	fmt.Fprintf(os.Stderr, "Fetching API spec for '%s %s'...\n", topicName, cmdName)
+	Infof(deps, "Fetching API spec for '%s %s'...\n", topicName, cmdName)
 
 	spec, err := fetchAndCacheSpec(cmd.Context(), topicName, entry, deps)
 	if err != nil {
@@ -241,6 +242,12 @@ func applyGlobalFlags(cmd *cobra.Command, parsed *ParsedArgs) {
 	}
 	if v := parsed.Get("verbose"); v == "true" || v == "1" {
 		pf.Set("verbose", "true")
+	}
+	if v := parsed.Get("quiet"); v == "true" || v == "1" {
+		pf.Set("quiet", "true")
+	}
+	if v := parsed.Get("q"); v == "true" || v == "1" {
+		pf.Set("quiet", "true")
 	}
 	if v := parsed.Get("per-page"); v != "" && v != "true" {
 		pf.Set("per-page", v)

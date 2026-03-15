@@ -76,7 +76,9 @@ Run 'plane docs update' to refresh the cache.`,
 		action := args[1]
 		entry := registry.LookupEntry(topicName, action)
 		if entry == nil {
-			fmt.Fprintf(os.Stderr, "No match for %q in topic %q. Available pages:\n\n", action, topicName)
+			if !flagQuiet {
+				fmt.Fprintf(os.Stderr, "No match for %q in topic %q. Available pages:\n\n", action, topicName)
+			}
 			return showTopic(topic)
 		}
 
@@ -93,7 +95,9 @@ var docsUpdateCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Fprintf(os.Stderr, "Fetching docs index from %s/llms.txt ...\n", registry.BaseURL)
+		if !flagQuiet {
+			fmt.Fprintf(os.Stderr, "Fetching docs index from %s/llms.txt ...\n", registry.BaseURL)
+		}
 		if err := registry.Update(cmd.Context()); err != nil {
 			return fmt.Errorf("updating docs: %w", err)
 		}
@@ -102,7 +106,9 @@ var docsUpdateCmd = &cobra.Command{
 		for _, t := range registry.Topics() {
 			total += len(t.Entries)
 		}
-		fmt.Fprintf(os.Stderr, "Updated: %d topics, %d entries.\n", len(registry.Topics()), total)
+		if !flagQuiet {
+			fmt.Fprintf(os.Stderr, "Updated: %d topics, %d entries.\n", len(registry.Topics()), total)
+		}
 		return nil
 	},
 }
@@ -152,7 +158,9 @@ Useful for:
 			}
 		}
 
-		fmt.Fprintf(os.Stderr, "Fetching specs for %d endpoints...\n", len(entries))
+		if !flagQuiet {
+			fmt.Fprintf(os.Stderr, "Fetching specs for %d endpoints...\n", len(entries))
+		}
 
 		// Bounded concurrent fetching
 		const workers = 8
@@ -193,11 +201,13 @@ Useful for:
 
 		success := atomic.LoadInt64(&successCount)
 		fail := atomic.LoadInt64(&failCount)
-		fmt.Fprintf(os.Stderr, "Updated: %d endpoint specs cached", success)
-		if fail > 0 {
-			fmt.Fprintf(os.Stderr, " (%d failed)", fail)
+		if !flagQuiet {
+			fmt.Fprintf(os.Stderr, "Updated: %d endpoint specs cached", success)
+			if fail > 0 {
+				fmt.Fprintf(os.Stderr, " (%d failed)", fail)
+			}
+			fmt.Fprintln(os.Stderr, ".")
 		}
-		fmt.Fprintln(os.Stderr, ".")
 		return nil
 	},
 }
@@ -223,7 +233,9 @@ func newRegistryNoLoad() (*docs.DocsRegistry, error) {
 	profile := cfg.ActiveProfile
 	docsURL := resolver.ResolveDocsURL(flagDocsURL)
 
-	return docs.NewRegistry(profile, docsURL), nil
+	registry := docs.NewRegistry(profile, docsURL)
+	registry.Quiet = flagQuiet
+	return registry, nil
 }
 
 func listTopics(registry *docs.DocsRegistry) error {
@@ -262,7 +274,9 @@ func showTopic(topic *docs.Topic) error {
 }
 
 func fetchAndPrint(url string) error {
-	fmt.Fprintf(os.Stderr, "Fetching %s ...\n\n", url)
+	if !flagQuiet {
+		fmt.Fprintf(os.Stderr, "Fetching %s ...\n\n", url)
+	}
 
 	content, err := docs.Fetch(context.Background(), url)
 	if err != nil {
@@ -270,6 +284,8 @@ func fetchAndPrint(url string) error {
 	}
 
 	fmt.Println(content)
-	fmt.Fprintf(os.Stderr, "\n---\nSource: %s\n", url)
+	if !flagQuiet {
+		fmt.Fprintf(os.Stderr, "\n---\nSource: %s\n", url)
+	}
 	return nil
 }

@@ -47,6 +47,7 @@ type Deps struct {
 	FlagDryRun       *bool
 	FlagField        *string
 	FlagFields       *string
+	FlagQuiet        *bool
 	Profile          string
 	BaseURL          string
 }
@@ -54,6 +55,21 @@ type Deps struct {
 // isDryRun returns true when the dry-run flag is set. Nil-safe.
 func isDryRun(deps *Deps) bool {
 	return deps.FlagDryRun != nil && *deps.FlagDryRun
+}
+
+// IsQuiet returns true when the quiet flag is set. Nil-safe.
+func IsQuiet(deps *Deps) bool {
+	return deps != nil && deps.FlagQuiet != nil && *deps.FlagQuiet
+}
+
+// Infof writes an informational message to stderr unless quiet mode is active.
+// Use for status messages like "Deleted.", "Added to module.", hints, etc.
+// Errors should still go directly to stderr (not through this function).
+func Infof(deps *Deps, format string, args ...any) {
+	if IsQuiet(deps) {
+		return
+	}
+	fmt.Fprintf(os.Stderr, format, args...)
 }
 
 // snapshotBody returns a shallow copy of body so the original is preserved
@@ -70,13 +86,13 @@ func snapshotBody(body map[string]any) map[string]any {
 }
 
 // printDryRun writes the would-be request details to stderr.
-func printDryRun(method, reqURL string, body map[string]any, relations map[string]string, workspace, projectID string) {
-	fmt.Fprintf(os.Stderr, "DRY RUN: %s %s\n", method, reqURL)
+func printDryRun(method, reqURL string, body map[string]any, relations map[string]string, workspace, projectID string, deps *Deps) {
+	Infof(deps, "DRY RUN: %s %s\n", method, reqURL)
 
 	if body != nil && method != "DELETE" {
 		data, err := json.MarshalIndent(body, "", "  ")
 		if err == nil {
-			fmt.Fprintf(os.Stderr, "Body: %s\n", data)
+			Infof(deps, "Body: %s\n", data)
 		}
 	}
 
@@ -89,7 +105,7 @@ func printDryRun(method, reqURL string, body map[string]any, relations map[strin
 			endpoint = fmt.Sprintf("/api/v1/workspaces/%s/projects/%s/cycles/%s/cycle-issues/", workspace, projectID, id)
 		}
 		if endpoint != "" {
-			fmt.Fprintf(os.Stderr, "(would also call: POST %s with {\"issues\":[\"<new-issue-id>\"]})\n", endpoint)
+			Infof(deps, "(would also call: POST %s with {\"issues\":[\"<new-issue-id>\"]})\n", endpoint)
 		}
 	}
 }
@@ -141,7 +157,7 @@ func ExecuteSpec(ctx context.Context, cmd *cobra.Command, spec *docs.EndpointSpe
 
 	// Dry-run: print what would be sent and return early
 	if isDryRun(deps) && spec.Method != "GET" {
-		printDryRun(spec.Method, reqURL, snapshot, relations, client.Workspace, projectID)
+		printDryRun(spec.Method, reqURL, snapshot, relations, client.Workspace, projectID, deps)
 		return nil
 	}
 
@@ -175,7 +191,7 @@ func ExecuteSpec(ctx context.Context, cmd *cobra.Command, spec *docs.EndpointSpe
 		if err := client.Delete(ctx, reqURL); err != nil {
 			return err
 		}
-		fmt.Fprintln(os.Stderr, "Deleted.")
+		Infof(deps, "Deleted.\n")
 		return nil
 	default:
 		return fmt.Errorf("unsupported method: %s", spec.Method)
@@ -196,7 +212,7 @@ func ExecuteSpec(ctx context.Context, cmd *cobra.Command, spec *docs.EndpointSpe
 
 	// Handle post-creation actions for many-to-many relations
 	if len(relations) > 0 {
-		postCreateActions(ctx, relations, respBody, client, projectID)
+		postCreateActions(ctx, relations, respBody, client, projectID, deps)
 	}
 
 	return nil
@@ -248,7 +264,7 @@ func ExecuteSpecFromArgs(ctx context.Context, spec *docs.EndpointSpec, parsed *P
 
 	// Dry-run: print what would be sent and return early
 	if isDryRun(deps) && spec.Method != "GET" {
-		printDryRun(spec.Method, reqURL, snapshot, relations, client.Workspace, projectID)
+		printDryRun(spec.Method, reqURL, snapshot, relations, client.Workspace, projectID, deps)
 		return nil
 	}
 
@@ -279,7 +295,7 @@ func ExecuteSpecFromArgs(ctx context.Context, spec *docs.EndpointSpec, parsed *P
 		if err := client.Delete(ctx, reqURL); err != nil {
 			return err
 		}
-		fmt.Fprintln(os.Stderr, "Deleted.")
+		Infof(deps, "Deleted.\n")
 		return nil
 	default:
 		return fmt.Errorf("unsupported method: %s", spec.Method)
@@ -300,7 +316,7 @@ func ExecuteSpecFromArgs(ctx context.Context, spec *docs.EndpointSpec, parsed *P
 
 	// Handle post-creation actions for many-to-many relations
 	if len(relations) > 0 {
-		postCreateActions(ctx, relations, respBody, client, projectID)
+		postCreateActions(ctx, relations, respBody, client, projectID, deps)
 	}
 
 	return nil
@@ -783,10 +799,10 @@ func extractCreatedID(respBody []byte) (string, error) {
 // to modules and/or cycles. The Plane API requires separate endpoints for these
 // many-to-many relationships. Failures are printed as warnings to stderr; the
 // created issue is never rolled back.
-func postCreateActions(ctx context.Context, relations map[string]string, respBody []byte, client *api.Client, projectID string) {
+func postCreateActions(ctx context.Context, relations map[string]string, respBody []byte, client *api.Client, projectID string, deps *Deps) {
 	issueID, err := extractCreatedID(respBody)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: issue created but could not extract ID for relation attach: %v\n", err)
+		Infof(deps, "Warning: issue created but could not extract ID for relation attach: %v\n", err)
 		return
 	}
 
@@ -798,9 +814,9 @@ func postCreateActions(ctx context.Context, relations map[string]string, respBod
 		moduleURL := fmt.Sprintf("%s/api/v1/workspaces/%s/projects/%s/modules/%s/module-issues/",
 			client.BaseURL, client.Workspace, projectID, moduleID)
 		if _, err := client.Post(ctx, moduleURL, payload); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: issue created but failed to add to module: %v\n", err)
+			Infof(deps, "Warning: issue created but failed to add to module: %v\n", err)
 		} else {
-			fmt.Fprintln(os.Stderr, "Added to module.")
+			Infof(deps, "Added to module.\n")
 		}
 	}
 
@@ -808,9 +824,9 @@ func postCreateActions(ctx context.Context, relations map[string]string, respBod
 		cycleURL := fmt.Sprintf("%s/api/v1/workspaces/%s/projects/%s/cycles/%s/cycle-issues/",
 			client.BaseURL, client.Workspace, projectID, cycleID)
 		if _, err := client.Post(ctx, cycleURL, payload); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: issue created but failed to add to cycle: %v\n", err)
+			Infof(deps, "Warning: issue created but failed to add to cycle: %v\n", err)
 		} else {
-			fmt.Fprintln(os.Stderr, "Added to cycle.")
+			Infof(deps, "Added to cycle.\n")
 		}
 	}
 }
@@ -863,4 +879,5 @@ func GenerateHelp(w io.Writer, topicName, cmdName string, spec *docs.EndpointSpe
 	fmt.Fprintln(w, "  -n, --dry-run\t\tPrint request details without executing")
 	fmt.Fprintln(w, "      --field\t\tExtract a single field (supports dotted paths)")
 	fmt.Fprintln(w, "      --fields\t\tExtract multiple fields as TSV (comma-separated)")
+	fmt.Fprintln(w, "  -q, --quiet\t\tSuppress informational stderr messages")
 }

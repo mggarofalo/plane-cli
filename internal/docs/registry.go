@@ -23,6 +23,7 @@ type Topic struct {
 type DocsRegistry struct {
 	Profile string
 	BaseURL string
+	Quiet   bool
 	topics  []Topic
 }
 
@@ -56,7 +57,9 @@ func (r *DocsRegistry) Load(ctx context.Context) error {
 
 	// 3. Fall back to defaults
 	r.topics = DefaultTopics
-	fmt.Fprintf(os.Stderr, "hint: using built-in defaults. Run 'plane docs update' to fetch latest docs index.\n")
+	if !r.Quiet {
+		fmt.Fprintf(os.Stderr, "hint: using built-in defaults. Run 'plane docs update' to fetch latest docs index.\n")
+	}
 	return nil
 }
 

@@ -128,9 +128,11 @@ var authLoginCmd = &cobra.Command{
 			return fmt.Errorf("saving config: %w", err)
 		}
 
-		fmt.Fprintf(os.Stderr, "Authenticated as %s (%s)\n", user.DisplayName, user.Email)
-		fmt.Fprintf(os.Stderr, "Profile: %s\n", profile)
-		fmt.Fprintf(os.Stderr, "Credentials stored in OS keyring.\n")
+		if !flagQuiet {
+			fmt.Fprintf(os.Stderr, "Authenticated as %s (%s)\n", user.DisplayName, user.Email)
+			fmt.Fprintf(os.Stderr, "Profile: %s\n", profile)
+			fmt.Fprintf(os.Stderr, "Credentials stored in OS keyring.\n")
+		}
 		return nil
 	},
 }
@@ -153,7 +155,9 @@ var authLogoutCmd = &cobra.Command{
 		_ = store.Delete(profile + "/api-key")
 		_ = store.Delete(profile + "/session-token")
 
-		fmt.Fprintf(os.Stderr, "Credentials removed for profile %q.\n", profile)
+		if !flagQuiet {
+			fmt.Fprintf(os.Stderr, "Credentials removed for profile %q.\n", profile)
+		}
 		return nil
 	},
 }
@@ -169,7 +173,7 @@ var authStatusCmd = &cobra.Command{
 
 		resolver := &auth.Resolver{
 			FlagToken: flagAPIKey,
-			Env:       &auth.EnvSource{},
+			Env:       &auth.EnvSource{Quiet: flagQuiet},
 			Config:    cfg,
 		}
 
@@ -180,7 +184,9 @@ var authStatusCmd = &cobra.Command{
 
 		resolved, err := resolver.Resolve()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Not authenticated: %v\n", err)
+			if !flagQuiet {
+				fmt.Fprintf(os.Stderr, "Not authenticated: %v\n", err)
+			}
 			return nil
 		}
 		defer resolved.Credential.Clear()
@@ -266,9 +272,11 @@ API keys. Copy the session_id cookie value from your browser's dev tools
 			return fmt.Errorf("storing session cookie: %w", err)
 		}
 
-		fmt.Fprintf(os.Stderr, "Session stored for %s (%s)\n", user.DisplayName, user.Email)
-		fmt.Fprintf(os.Stderr, "Profile: %s\n", profile)
-		fmt.Fprintf(os.Stderr, "Session cookie stored in OS keyring.\n")
+		if !flagQuiet {
+			fmt.Fprintf(os.Stderr, "Session stored for %s (%s)\n", user.DisplayName, user.Email)
+			fmt.Fprintf(os.Stderr, "Profile: %s\n", profile)
+			fmt.Fprintf(os.Stderr, "Session cookie stored in OS keyring.\n")
+		}
 		return nil
 	},
 }
@@ -293,7 +301,9 @@ var authSwitchCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Fprintf(os.Stderr, "Switched to profile %q.\n", args[0])
+		if !flagQuiet {
+			fmt.Fprintf(os.Stderr, "Switched to profile %q.\n", args[0])
+		}
 		return nil
 	},
 }
