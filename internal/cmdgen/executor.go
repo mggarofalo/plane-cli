@@ -48,6 +48,7 @@ type Deps struct {
 	FlagField        *string
 	FlagFields       *string
 	FlagQuiet        *bool
+	FlagStrict       *bool
 	Profile          string
 	BaseURL          string
 }
@@ -62,6 +63,11 @@ func IsQuiet(deps *Deps) bool {
 	return deps != nil && deps.FlagQuiet != nil && *deps.FlagQuiet
 }
 
+// IsStrict returns true when the strict flag is set. Nil-safe.
+func IsStrict(deps *Deps) bool {
+	return deps != nil && deps.FlagStrict != nil && *deps.FlagStrict
+}
+
 // Infof writes an informational message to stderr unless quiet mode is active.
 // Use for status messages like "Deleted.", "Added to module.", hints, etc.
 // Errors should still go directly to stderr (not through this function).
@@ -71,6 +77,22 @@ func Infof(deps *Deps, format string, args ...any) {
 	}
 	fmt.Fprintf(os.Stderr, format, args...)
 }
+
+// Warnf writes a warning message to stderr. Unlike Infof, warnings are emitted
+// even in quiet mode because they indicate potential problems. Only --quiet
+// suppresses informational messages, not warnings.
+func Warnf(format string, args ...any) {
+	fmt.Fprintf(os.Stderr, format, args...)
+}
+
+// ResolutionError indicates a name-to-UUID resolution failure when --strict is
+// active. It produces exit code 4 (validation) via the standard error handling.
+type ResolutionError struct {
+	Msg string
+}
+
+func (e *ResolutionError) Error() string    { return e.Msg }
+func (e *ResolutionError) ExitCode() int    { return api.ExitValidation }
 
 // snapshotBody returns a shallow copy of body so the original is preserved
 // before extractRelationParams mutates it.
@@ -138,7 +160,10 @@ func ExecuteSpec(ctx context.Context, cmd *cobra.Command, spec *docs.EndpointSpe
 	}
 
 	// Collect body params
-	body := collectBodyParams(cmd, spec, deps)
+	body, err := collectBodyParams(cmd, spec, deps)
+	if err != nil {
+		return err
+	}
 	// Inject global path params (project_id, workspace_slug) when spec has them as body params
 	body = injectGlobalBodyParams(body, spec, client.Workspace, projectID)
 
@@ -246,7 +271,10 @@ func ExecuteSpecFromArgs(ctx context.Context, spec *docs.EndpointSpec, parsed *P
 	}
 
 	// Collect body params from parsed args
-	body := collectBodyParamsFromArgs(ctx, spec, parsed, deps)
+	body, err := collectBodyParamsFromArgs(ctx, spec, parsed, deps)
+	if err != nil {
+		return err
+	}
 	body = injectGlobalBodyParams(body, spec, client.Workspace, projectID)
 
 	// Snapshot body before relation extraction mutates it (for dry-run output)
@@ -346,8 +374,11 @@ func buildURL(client *api.Client, spec *docs.EndpointSpec, cmd *cobra.Command, p
 			return "", fmt.Errorf("required path parameter --%s not provided", flagName)
 		}
 		// Resolve name to UUID if needed
-		val = resolveIfNeeded(cmd.Context(), val, p.Name, client, projectID, deps)
-		path = strings.ReplaceAll(path, placeholder, val)
+		resolved, resolveErr := resolveIfNeeded(cmd.Context(), val, p.Name, client, projectID, deps)
+		if resolveErr != nil {
+			return "", resolveErr
+		}
+		path = strings.ReplaceAll(path, placeholder, resolved)
 	}
 
 	reqURL := client.BaseURL + path
@@ -394,8 +425,11 @@ func buildURLFromArgs(client *api.Client, spec *docs.EndpointSpec, parsed *Parse
 		if val == "" {
 			return "", fmt.Errorf("required path parameter --%s not provided", flagName)
 		}
-		val = resolveIfNeeded(context.Background(), val, p.Name, client, projectID, deps)
-		path = strings.ReplaceAll(path, placeholder, val)
+		resolved, resolveErr := resolveIfNeeded(context.Background(), val, p.Name, client, projectID, deps)
+		if resolveErr != nil {
+			return "", resolveErr
+		}
+		path = strings.ReplaceAll(path, placeholder, resolved)
 	}
 
 	reqURL := client.BaseURL + path
@@ -420,9 +454,9 @@ func buildURLFromArgs(client *api.Client, spec *docs.EndpointSpec, parsed *Parse
 	return u.String(), nil
 }
 
-func collectBodyParams(cmd *cobra.Command, spec *docs.EndpointSpec, deps *Deps) map[string]any {
+func collectBodyParams(cmd *cobra.Command, spec *docs.EndpointSpec, deps *Deps) (map[string]any, error) {
 	if spec.Method == "GET" || spec.Method == "DELETE" {
-		return nil
+		return nil, nil
 	}
 
 	body := map[string]any{}
@@ -462,7 +496,11 @@ func collectBodyParams(cmd *cobra.Command, spec *docs.EndpointSpec, deps *Deps) 
 			val, _ := cmd.Flags().GetStringSlice(flagName)
 			if len(val) > 0 {
 				if issueRefParams[p.Name] {
-					val = resolveSliceIfNeeded(cmd.Context(), val, p.Name, deps)
+					resolved, err := resolveSliceIfNeeded(cmd.Context(), val, p.Name, deps)
+					if err != nil {
+						return nil, err
+					}
+					val = resolved
 				}
 				body[p.Name] = val
 			}
@@ -476,21 +514,24 @@ func collectBodyParams(cmd *cobra.Command, spec *docs.EndpointSpec, deps *Deps) 
 			val, _ := cmd.Flags().GetString(flagName)
 			if val != "" {
 				// Resolve name to UUID for _id fields
-				val = resolveIfNeeded(cmd.Context(), val, p.Name, nil, "", deps)
-				body[p.Name] = val
+				resolved, err := resolveIfNeeded(cmd.Context(), val, p.Name, nil, "", deps)
+				if err != nil {
+					return nil, err
+				}
+				body[p.Name] = resolved
 			}
 		}
 	}
 
 	if len(body) == 0 {
-		return nil
+		return nil, nil
 	}
-	return body
+	return body, nil
 }
 
-func collectBodyParamsFromArgs(ctx context.Context, spec *docs.EndpointSpec, parsed *ParsedArgs, deps *Deps) map[string]any {
+func collectBodyParamsFromArgs(ctx context.Context, spec *docs.EndpointSpec, parsed *ParsedArgs, deps *Deps) (map[string]any, error) {
 	if spec.Method == "GET" || spec.Method == "DELETE" {
-		return nil
+		return nil, nil
 	}
 
 	body := map[string]any{}
@@ -530,7 +571,11 @@ func collectBodyParamsFromArgs(ctx context.Context, spec *docs.EndpointSpec, par
 			val := parsed.GetSlice(flagName)
 			if len(val) > 0 {
 				if issueRefParams[p.Name] {
-					val = resolveSliceIfNeeded(ctx, val, p.Name, deps)
+					resolved, err := resolveSliceIfNeeded(ctx, val, p.Name, deps)
+					if err != nil {
+						return nil, err
+					}
+					val = resolved
 				}
 				body[p.Name] = val
 			}
@@ -546,16 +591,19 @@ func collectBodyParamsFromArgs(ctx context.Context, spec *docs.EndpointSpec, par
 		default:
 			val := parsed.Get(flagName)
 			if val != "" {
-				val = resolveIfNeeded(ctx, val, p.Name, nil, "", deps)
-				body[p.Name] = val
+				resolved, err := resolveIfNeeded(ctx, val, p.Name, nil, "", deps)
+				if err != nil {
+					return nil, err
+				}
+				body[p.Name] = resolved
 			}
 		}
 	}
 
 	if len(body) == 0 {
-		return nil
+		return nil, nil
 	}
-	return body
+	return body, nil
 }
 
 // injectGlobalBodyParams adds project_id and workspace_slug to the body when
@@ -700,49 +748,70 @@ var resolvableParams = map[string]string{
 	"label":  "label",
 }
 
-// resolveIfNeeded resolves a value to UUID if the param expects an ID and the value is not a UUID.
-func resolveIfNeeded(ctx context.Context, value, paramName string, client *api.Client, projectID string, deps *Deps) string {
+// resolveIfNeeded resolves a value to UUID if the param expects an ID and the
+// value is not a UUID. When resolution fails, it emits a warning to stderr and
+// passes the literal value through. If --strict is active, resolution failure
+// returns a ResolutionError instead.
+func resolveIfNeeded(ctx context.Context, value, paramName string, client *api.Client, projectID string, deps *Deps) (string, error) {
 	if deps.IsUUID == nil || deps.IsUUID(value) {
-		return value
+		return value, nil
 	}
 
 	// Sequence ID resolution for issue-reference params (e.g. "PROJ-42")
 	if issueRefParams[paramName] && IsSequenceID(value) {
 		resolved, err := ResolveSequenceID(ctx, value, deps)
 		if err == nil {
-			return resolved
+			return resolved, nil
 		}
-		// Fall through to other resolution strategies
+		// Sequence ID looked right but could not be resolved
+		return warnOrFailResolution(value, paramName, deps)
 	}
 
 	// Standard _id suffix params (e.g., state_id, label_id)
 	if strings.HasSuffix(paramName, "_id") {
 		resolved, err := ResolveNameToUUID(ctx, value, paramName, deps)
 		if err != nil {
-			return value
+			return warnOrFailResolution(value, paramName, deps)
 		}
-		return resolved
+		return resolved, nil
 	}
 
 	// Known params that accept UUIDs without _id suffix
 	if resourceName, ok := resolvableParams[paramName]; ok {
 		resolved, err := ResolveNameToUUID(ctx, value, resourceName+"_id", deps)
 		if err != nil {
-			return value
+			return warnOrFailResolution(value, paramName, deps)
 		}
-		return resolved
+		return resolved, nil
 	}
 
-	return value
+	return value, nil
+}
+
+// warnOrFailResolution emits a warning about a failed name resolution. When
+// --strict is active, it returns a ResolutionError; otherwise it passes the
+// literal value through.
+func warnOrFailResolution(value, paramName string, deps *Deps) (string, error) {
+	if IsStrict(deps) {
+		return "", &ResolutionError{
+			Msg: fmt.Sprintf("could not resolve %q for %s; passing literal value (use --strict=false to allow)", value, paramName),
+		}
+	}
+	Warnf("Warning: could not resolve %q for %s; passing literal value\n", value, paramName)
+	return value, nil
 }
 
 // resolveSliceIfNeeded resolves each element in a string slice using resolveIfNeeded.
-func resolveSliceIfNeeded(ctx context.Context, values []string, paramName string, deps *Deps) []string {
+func resolveSliceIfNeeded(ctx context.Context, values []string, paramName string, deps *Deps) ([]string, error) {
 	resolved := make([]string, len(values))
 	for i, v := range values {
-		resolved[i] = resolveIfNeeded(ctx, v, paramName, nil, "", deps)
+		r, err := resolveIfNeeded(ctx, v, paramName, nil, "", deps)
+		if err != nil {
+			return nil, err
+		}
+		resolved[i] = r
 	}
-	return resolved
+	return resolved, nil
 }
 
 // relationParams are body parameter names for many-to-many relationships that
@@ -880,4 +949,5 @@ func GenerateHelp(w io.Writer, topicName, cmdName string, spec *docs.EndpointSpe
 	fmt.Fprintln(w, "      --field\t\tExtract a single field (supports dotted paths)")
 	fmt.Fprintln(w, "      --fields\t\tExtract multiple fields as TSV (comma-separated)")
 	fmt.Fprintln(w, "  -q, --quiet\t\tSuppress informational stderr messages")
+	fmt.Fprintln(w, "      --strict\t\tTreat name-resolution failures as hard errors")
 }

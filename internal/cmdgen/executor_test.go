@@ -200,7 +200,10 @@ func TestResolveSliceIfNeeded(t *testing.T) {
 
 	t.Run("resolves sequence IDs in slice", func(t *testing.T) {
 		input := []string{"PROJ-1", "PROJ-2"}
-		result := resolveSliceIfNeeded(context.Background(), input, "issues", deps)
+		result, err := resolveSliceIfNeeded(context.Background(), input, "issues", deps)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if result[0] != uuid1 {
 			t.Errorf("expected %s, got %s", uuid1, result[0])
 		}
@@ -211,7 +214,10 @@ func TestResolveSliceIfNeeded(t *testing.T) {
 
 	t.Run("passes through UUIDs unchanged", func(t *testing.T) {
 		input := []string{uuid1}
-		result := resolveSliceIfNeeded(context.Background(), input, "issues", deps)
+		result, err := resolveSliceIfNeeded(context.Background(), input, "issues", deps)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if result[0] != uuid1 {
 			t.Errorf("expected %s, got %s", uuid1, result[0])
 		}
@@ -219,7 +225,10 @@ func TestResolveSliceIfNeeded(t *testing.T) {
 
 	t.Run("leaves unresolvable values unchanged", func(t *testing.T) {
 		input := []string{"PROJ-999"}
-		result := resolveSliceIfNeeded(context.Background(), input, "issues", deps)
+		result, err := resolveSliceIfNeeded(context.Background(), input, "issues", deps)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if result[0] != "PROJ-999" {
 			t.Errorf("expected PROJ-999, got %s", result[0])
 		}
@@ -249,21 +258,30 @@ func TestResolveIfNeeded_SequenceID(t *testing.T) {
 	}
 
 	t.Run("resolves sequence ID for work_item_id", func(t *testing.T) {
-		result := resolveIfNeeded(context.Background(), "PROJ-42", "work_item_id", nil, "", deps)
+		result, err := resolveIfNeeded(context.Background(), "PROJ-42", "work_item_id", nil, "", deps)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if result != uuid {
 			t.Errorf("expected %s, got %s", uuid, result)
 		}
 	})
 
 	t.Run("resolves sequence ID for parent", func(t *testing.T) {
-		result := resolveIfNeeded(context.Background(), "PROJ-42", "parent", nil, "", deps)
+		result, err := resolveIfNeeded(context.Background(), "PROJ-42", "parent", nil, "", deps)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if result != uuid {
 			t.Errorf("expected %s, got %s", uuid, result)
 		}
 	})
 
 	t.Run("does not resolve sequence ID for non-issue params", func(t *testing.T) {
-		result := resolveIfNeeded(context.Background(), "PROJ-42", "state", nil, "", deps)
+		result, err := resolveIfNeeded(context.Background(), "PROJ-42", "state", nil, "", deps)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		// Should not resolve — "state" is not an issue ref param, and PROJ-42 is not a state name
 		if result == uuid {
 			t.Error("should not have resolved sequence ID for state param")
@@ -271,7 +289,10 @@ func TestResolveIfNeeded_SequenceID(t *testing.T) {
 	})
 
 	t.Run("passes through UUIDs", func(t *testing.T) {
-		result := resolveIfNeeded(context.Background(), uuid, "work_item_id", nil, "", deps)
+		result, err := resolveIfNeeded(context.Background(), uuid, "work_item_id", nil, "", deps)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if result != uuid {
 			t.Errorf("expected %s, got %s", uuid, result)
 		}
@@ -651,5 +672,267 @@ func TestQuiet_DELETE_SuppressesDeleted(t *testing.T) {
 	}
 	if !deleteCalled {
 		t.Error("expected DELETE request to be made")
+	}
+}
+
+func TestIsStrict(t *testing.T) {
+	t.Run("returns false when deps is nil", func(t *testing.T) {
+		if IsStrict(nil) {
+			t.Error("expected false for nil deps")
+		}
+	})
+
+	t.Run("returns false when FlagStrict is nil", func(t *testing.T) {
+		deps := &Deps{}
+		if IsStrict(deps) {
+			t.Error("expected false for nil FlagStrict")
+		}
+	})
+
+	t.Run("returns false when false", func(t *testing.T) {
+		f := false
+		deps := &Deps{FlagStrict: &f}
+		if IsStrict(deps) {
+			t.Error("expected false")
+		}
+	})
+
+	t.Run("returns true when true", func(t *testing.T) {
+		f := true
+		deps := &Deps{FlagStrict: &f}
+		if !IsStrict(deps) {
+			t.Error("expected true")
+		}
+	})
+}
+
+func TestResolutionError_ExitCode(t *testing.T) {
+	err := &ResolutionError{Msg: "could not resolve \"In Progrss\" for state"}
+	if err.ExitCode() != api.ExitValidation {
+		t.Errorf("expected exit code %d, got %d", api.ExitValidation, err.ExitCode())
+	}
+	if err.Error() != "could not resolve \"In Progrss\" for state" {
+		t.Errorf("unexpected error message: %s", err.Error())
+	}
+}
+
+func TestWarnOrFailResolution_NoStrict(t *testing.T) {
+	// Without strict: should return the literal value and no error
+	deps := &Deps{}
+	val, err := warnOrFailResolution("In Progrss", "state", deps)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if val != "In Progrss" {
+		t.Errorf("expected literal value, got %q", val)
+	}
+}
+
+func TestWarnOrFailResolution_Strict(t *testing.T) {
+	strict := true
+	deps := &Deps{FlagStrict: &strict}
+	_, err := warnOrFailResolution("In Progrss", "state", deps)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	resErr, ok := err.(*ResolutionError)
+	if !ok {
+		t.Fatalf("expected *ResolutionError, got %T", err)
+	}
+	if resErr.ExitCode() != api.ExitValidation {
+		t.Errorf("expected exit code %d, got %d", api.ExitValidation, resErr.ExitCode())
+	}
+}
+
+func TestResolveIfNeeded_WarnOnNameFailure(t *testing.T) {
+	// Server returns no matching state
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Return a list with states that don't match "In Progrss"
+		fmt.Fprint(w, `{"results": [{"id": "aaa", "name": "In Progress"}, {"id": "bbb", "name": "Done"}]}`)
+	}))
+	defer srv.Close()
+
+	isUUID := func(s string) bool { return len(s) == 36 && s[8] == '-' }
+	deps := &Deps{
+		NewClient: func() (*api.Client, error) {
+			return api.NewClient(srv.URL, "test-token", "test-ws", false, nil), nil
+		},
+		RequireWorkspace: func(c *api.Client) error { return nil },
+		RequireProject:   func() (string, error) { return "proj-uuid", nil },
+		IsUUID:           isUUID,
+	}
+
+	// Without strict: returns literal value
+	result, err := resolveIfNeeded(context.Background(), "In Progrss", "state", nil, "", deps)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "In Progrss" {
+		t.Errorf("expected literal value, got %q", result)
+	}
+}
+
+func TestResolveIfNeeded_StrictFailsOnNameMismatch(t *testing.T) {
+	// Server returns no matching state
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"results": [{"id": "aaa", "name": "In Progress"}, {"id": "bbb", "name": "Done"}]}`)
+	}))
+	defer srv.Close()
+
+	isUUID := func(s string) bool { return len(s) == 36 && s[8] == '-' }
+	strict := true
+	deps := &Deps{
+		NewClient: func() (*api.Client, error) {
+			return api.NewClient(srv.URL, "test-token", "test-ws", false, nil), nil
+		},
+		RequireWorkspace: func(c *api.Client) error { return nil },
+		RequireProject:   func() (string, error) { return "proj-uuid", nil },
+		IsUUID:           isUUID,
+		FlagStrict:       &strict,
+	}
+
+	// With strict: returns error
+	_, err := resolveIfNeeded(context.Background(), "In Progrss", "state", nil, "", deps)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if _, ok := err.(*ResolutionError); !ok {
+		t.Fatalf("expected *ResolutionError, got %T", err)
+	}
+}
+
+func TestResolveIfNeeded_StrictFailsOnSequenceID(t *testing.T) {
+	// Server returns 404 for the sequence ID
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Fprint(w, `{"detail": "not found"}`)
+	}))
+	defer srv.Close()
+
+	isUUID := func(s string) bool { return len(s) == 36 && s[8] == '-' }
+	strict := true
+	deps := &Deps{
+		NewClient: func() (*api.Client, error) {
+			return api.NewClient(srv.URL, "test-token", "test-ws", false, nil), nil
+		},
+		RequireWorkspace: func(c *api.Client) error { return nil },
+		IsUUID:           isUUID,
+		FlagStrict:       &strict,
+	}
+
+	// With strict: returns error for unresolvable sequence ID
+	_, err := resolveIfNeeded(context.Background(), "PROJ-999", "work_item_id", nil, "", deps)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if _, ok := err.(*ResolutionError); !ok {
+		t.Fatalf("expected *ResolutionError, got %T", err)
+	}
+}
+
+func TestResolveIfNeeded_WarnOnSequenceIDFailure(t *testing.T) {
+	// Server returns 404
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Fprint(w, `{"detail": "not found"}`)
+	}))
+	defer srv.Close()
+
+	isUUID := func(s string) bool { return len(s) == 36 && s[8] == '-' }
+	deps := &Deps{
+		NewClient: func() (*api.Client, error) {
+			return api.NewClient(srv.URL, "test-token", "test-ws", false, nil), nil
+		},
+		RequireWorkspace: func(c *api.Client) error { return nil },
+		IsUUID:           isUUID,
+	}
+
+	// Without strict: returns literal value (with warning to stderr)
+	result, err := resolveIfNeeded(context.Background(), "PROJ-999", "work_item_id", nil, "", deps)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "PROJ-999" {
+		t.Errorf("expected PROJ-999, got %s", result)
+	}
+}
+
+func TestResolveSliceIfNeeded_StrictFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Fprint(w, `{"detail": "not found"}`)
+	}))
+	defer srv.Close()
+
+	isUUID := func(s string) bool { return len(s) == 36 && s[8] == '-' }
+	strict := true
+	deps := &Deps{
+		NewClient: func() (*api.Client, error) {
+			return api.NewClient(srv.URL, "test-token", "test-ws", false, nil), nil
+		},
+		RequireWorkspace: func(c *api.Client) error { return nil },
+		IsUUID:           isUUID,
+		FlagStrict:       &strict,
+	}
+
+	// With strict: should error on unresolvable sequence ID in slice
+	_, err := resolveSliceIfNeeded(context.Background(), []string{"PROJ-999"}, "issues", deps)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if _, ok := err.(*ResolutionError); !ok {
+		t.Fatalf("expected *ResolutionError, got %T", err)
+	}
+}
+
+func TestStrict_POST_FailsOnResolutionError(t *testing.T) {
+	// Server returns empty list of states (so resolution fails)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"results": []}`)
+	}))
+	defer srv.Close()
+
+	strict := true
+	deps := &Deps{
+		NewClient: func() (*api.Client, error) {
+			return api.NewClient(srv.URL, "test-token", "test-ws", false, nil), nil
+		},
+		RequireWorkspace: func(c *api.Client) error { return nil },
+		RequireProject:   func() (string, error) { return "proj-uuid", nil },
+		PaginationParams: func() api.PaginationParams { return api.PaginationParams{PerPage: 100} },
+		Formatter:        func() output.Formatter { return output.New("json") },
+		IsUUID:           func(s string) bool { return len(s) == 36 && s[8] == '-' },
+		FlagStrict:       &strict,
+	}
+
+	spec := &docs.EndpointSpec{
+		Method:       "POST",
+		PathTemplate: "/api/v1/workspaces/{workspace_slug}/projects/{project_id}/work-items/",
+		EntryTitle:   "Create Work Item",
+		Params: []docs.ParamSpec{
+			{Name: "name", Location: docs.ParamBody, Type: "string"},
+			{Name: "state", Location: docs.ParamBody, Type: "string"},
+		},
+	}
+
+	parsed := &ParsedArgs{
+		Values: map[string]string{"name": "Test Issue", "state": "In Progrss"},
+		Slices: map[string][]string{},
+	}
+
+	err := ExecuteSpecFromArgs(context.Background(), spec, parsed, deps)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if _, ok := err.(*ResolutionError); !ok {
+		t.Fatalf("expected *ResolutionError, got %T: %v", err, err)
+	}
+}
+
+func TestExitCodeFromError_ResolutionError(t *testing.T) {
+	err := &ResolutionError{Msg: "test"}
+	code := api.ExitCodeFromError(err)
+	if code != api.ExitValidation {
+		t.Errorf("expected exit code %d, got %d", api.ExitValidation, code)
 	}
 }

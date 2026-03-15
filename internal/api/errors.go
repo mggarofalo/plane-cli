@@ -63,6 +63,11 @@ func IsUnauthorized(err error) bool {
 	return false
 }
 
+// ExitCoder is implemented by errors that have a specific exit code.
+type ExitCoder interface {
+	ExitCode() int
+}
+
 // ExitCodeFromError returns the appropriate exit code for any error.
 func ExitCodeFromError(err error) int {
 	if err == nil {
@@ -70,6 +75,10 @@ func ExitCodeFromError(err error) int {
 	}
 	if apiErr, ok := err.(*APIError); ok {
 		return apiErr.ExitCode()
+	}
+	// Allow other error types (e.g., ResolutionError) to specify their exit code.
+	if ec, ok := err.(ExitCoder); ok {
+		return ec.ExitCode()
 	}
 	return ExitGeneralError
 }
@@ -104,6 +113,10 @@ func FormatErrorJSON(err error) []byte {
 		} else {
 			env.Message = apiErr.Status
 		}
+	} else if ec, ok := err.(ExitCoder); ok {
+		env.Code = 0
+		env.ExitCode = ec.ExitCode()
+		env.Message = err.Error()
 	} else {
 		env.Code = 0
 		env.ExitCode = ExitGeneralError
