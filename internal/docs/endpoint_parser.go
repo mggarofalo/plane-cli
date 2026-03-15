@@ -180,13 +180,17 @@ func parseInlineParams(markdown string) []ParamSpec {
 			}
 		}
 
-		params = append(params, ParamSpec{
+		p := ParamSpec{
 			Name:        name,
 			Type:        typStr,
 			Required:    required,
 			Description: desc,
 			Location:    location,
-		})
+		}
+		if enumVals := extractEnum(desc); len(enumVals) > 0 {
+			p.Enum = enumVals
+		}
+		params = append(params, p)
 	}
 
 	return params
@@ -338,9 +342,40 @@ func extractParamFromRow(cells []string, cm columnMap, defaultLocation ParamLoca
 	}
 	if cm.desc >= 0 && cm.desc < len(cells) {
 		p.Description = strings.TrimSpace(cells[cm.desc])
+		if enumVals := extractEnum(p.Description); len(enumVals) > 0 {
+			p.Enum = enumVals
+		}
 	}
 
 	return p
+}
+
+// enumFromDescRe matches patterns like "value1, value2, value3" at the end of a description
+// after a colon or keywords like "one of", "values:", "options:", "enum:".
+var enumFromDescRe = regexp.MustCompile(`(?i)(?::|one of|values?|options?|enum)\s*[:=]?\s*` + "`?" + `([\w]+(?:\s*,\s*[\w]+)+)` + "`?")
+
+// extractEnum attempts to extract enum values from a parameter description.
+// It looks for patterns like "Priority: urgent, high, medium, low, none"
+// or "one of: active, paused, completed".
+func extractEnum(desc string) []string {
+	m := enumFromDescRe.FindStringSubmatch(desc)
+	if m == nil {
+		return nil
+	}
+	raw := m[1]
+	parts := strings.Split(raw, ",")
+	var values []string
+	for _, p := range parts {
+		v := strings.TrimSpace(p)
+		v = strings.Trim(v, "`\"'")
+		if v != "" {
+			values = append(values, v)
+		}
+	}
+	if len(values) < 2 {
+		return nil
+	}
+	return values
 }
 
 func normalizeType(t string) string {
