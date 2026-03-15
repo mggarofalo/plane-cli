@@ -36,9 +36,9 @@ type ensureSpecs struct {
 // findEnsureSpecs locates the create, update, and list specs from cached specs.
 // Returns nil if the minimum required specs (create + list) are not found.
 func findEnsureSpecs(topicName string, cachedSpecs []docs.CachedSpec) *ensureSpecs {
-	// For list, prefer the topic's own list endpoint (not sub-resource lists).
-	// The list endpoint path typically ends with the topic's plural form.
-	listSpec := findSpecByMethod(cachedSpecs, "GET")
+	// For list, find a GET endpoint that doesn't require a resource-specific
+	// path param (i.e., the collection endpoint, not a detail/get-by-id endpoint).
+	listSpec := findListSpec(cachedSpecs)
 
 	// For create, find the POST endpoint at the topic level.
 	createSpec := findSpecByMethod(cachedSpecs, "POST")
@@ -58,6 +58,42 @@ func findEnsureSpecs(topicName string, cachedSpecs []docs.CachedSpec) *ensureSpe
 		update: updateSpec,
 		list:   listSpec,
 	}
+}
+
+// findListSpec returns the GET spec that serves as the collection list endpoint.
+// It prefers GET endpoints without resource-specific path params (i.e., endpoints
+// that list all resources rather than getting a single one by ID).
+func findListSpec(specs []docs.CachedSpec) *docs.EndpointSpec {
+	var fallback *docs.EndpointSpec
+	for i := range specs {
+		if specs[i].Spec.Method != "GET" {
+			continue
+		}
+		if fallback == nil {
+			fallback = &specs[i].Spec
+		}
+		// A list endpoint has no resource-specific path params
+		// (only workspace_slug and project_id).
+		if !hasResourcePathParam(&specs[i].Spec) {
+			return &specs[i].Spec
+		}
+	}
+	return fallback
+}
+
+// hasResourcePathParam returns true if the spec has path params beyond
+// workspace_slug and project_id (indicating it's a detail/single-resource endpoint).
+func hasResourcePathParam(spec *docs.EndpointSpec) bool {
+	for _, p := range spec.Params {
+		if p.Location != docs.ParamPath {
+			continue
+		}
+		if p.Name == "workspace_slug" || p.Name == "project_id" {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 // BuildEnsureCommand creates the "ensure" subcommand for a topic.
@@ -150,6 +186,11 @@ func executeEnsure(ctx context.Context, cmd *cobra.Command, topicName string, sp
 	// Collect body params from the create spec
 	body := collectEnsureBodyParams(cmd, specs.create, deps)
 	body = injectGlobalBodyParams(body, specs.create, client.Workspace, projectID)
+
+	// Ensure body is non-nil before field lookups
+	if body == nil {
+		body = map[string]any{}
+	}
 
 	// Determine the match value from the body
 	matchValue, ok := body[matchField]

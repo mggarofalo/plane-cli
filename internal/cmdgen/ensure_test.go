@@ -571,6 +571,50 @@ func TestEnsureMissingMatchField(t *testing.T) {
 	}
 }
 
+func TestEnsureNoFlagsSet(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("should not make requests when no flags set")
+	}))
+	defer srv.Close()
+
+	deps := &Deps{
+		NewClient: func() (*api.Client, error) {
+			return api.NewClient(srv.URL, "test-token", "test-ws", false, nil), nil
+		},
+		RequireWorkspace: func(c *api.Client) error { return nil },
+		RequireProject:   func() (string, error) { return "proj-uuid", nil },
+		PaginationParams: func() api.PaginationParams { return api.PaginationParams{PerPage: 100} },
+		Formatter:        func() output.Formatter { return output.New("json") },
+		IsUUID:           func(s string) bool { return len(s) == 36 && s[8] == '-' },
+	}
+
+	specs := &ensureSpecs{
+		create: &docs.EndpointSpec{
+			Method:       "POST",
+			PathTemplate: "/api/v1/workspaces/{workspace_slug}/projects/{project_id}/states/",
+			Params: []docs.ParamSpec{
+				{Name: "name", Location: docs.ParamBody, Type: "string"},
+			},
+		},
+		list: &docs.EndpointSpec{
+			Method:       "GET",
+			PathTemplate: "/api/v1/workspaces/{workspace_slug}/projects/{project_id}/states/",
+		},
+	}
+
+	// No flags set at all - should not panic on nil body map
+	cmd := BuildEnsureCommand("state", specs, deps)
+	cmd.SetArgs([]string{})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for no flags, got nil")
+	}
+	if !contains(err.Error(), "match field") {
+		t.Errorf("expected error about match field, got: %v", err)
+	}
+}
+
 func TestEnsureWithRelations(t *testing.T) {
 	createCalled := false
 	moduleCalled := false
@@ -668,6 +712,110 @@ func TestEnsureMultiPageMatch(t *testing.T) {
 	if id != "b2" {
 		t.Errorf("expected b2, got %s", id)
 	}
+}
+
+func TestFindListSpec(t *testing.T) {
+	t.Run("prefers GET without resource path params", func(t *testing.T) {
+		specs := []docs.CachedSpec{
+			{Spec: docs.EndpointSpec{
+				Method:       "GET",
+				EntryTitle:   "Get Cycle",
+				PathTemplate: "/api/v1/workspaces/{workspace_slug}/projects/{project_id}/cycles/{cycle_id}/",
+				Params: []docs.ParamSpec{
+					{Name: "workspace_slug", Location: docs.ParamPath},
+					{Name: "project_id", Location: docs.ParamPath},
+					{Name: "cycle_id", Location: docs.ParamPath},
+				},
+			}},
+			{Spec: docs.EndpointSpec{
+				Method:       "GET",
+				EntryTitle:   "List Cycles",
+				PathTemplate: "/api/v1/workspaces/{workspace_slug}/projects/{project_id}/cycles/",
+				Params: []docs.ParamSpec{
+					{Name: "workspace_slug", Location: docs.ParamPath},
+					{Name: "project_id", Location: docs.ParamPath},
+				},
+			}},
+		}
+
+		s := findListSpec(specs)
+		if s == nil {
+			t.Fatal("expected a spec")
+		}
+		if s.EntryTitle != "List Cycles" {
+			t.Errorf("expected List Cycles, got %s", s.EntryTitle)
+		}
+	})
+
+	t.Run("falls back to first GET if all have resource params", func(t *testing.T) {
+		specs := []docs.CachedSpec{
+			{Spec: docs.EndpointSpec{
+				Method:     "GET",
+				EntryTitle: "Get Thing",
+				Params: []docs.ParamSpec{
+					{Name: "thing_id", Location: docs.ParamPath},
+				},
+			}},
+		}
+
+		s := findListSpec(specs)
+		if s == nil {
+			t.Fatal("expected a spec")
+		}
+		if s.EntryTitle != "Get Thing" {
+			t.Errorf("expected Get Thing, got %s", s.EntryTitle)
+		}
+	})
+
+	t.Run("returns nil for no GET specs", func(t *testing.T) {
+		specs := []docs.CachedSpec{
+			{Spec: docs.EndpointSpec{Method: "POST", EntryTitle: "Create"}},
+		}
+
+		s := findListSpec(specs)
+		if s != nil {
+			t.Error("expected nil")
+		}
+	})
+}
+
+func TestHasResourcePathParam(t *testing.T) {
+	t.Run("returns false for only workspace and project", func(t *testing.T) {
+		spec := &docs.EndpointSpec{
+			Params: []docs.ParamSpec{
+				{Name: "workspace_slug", Location: docs.ParamPath},
+				{Name: "project_id", Location: docs.ParamPath},
+			},
+		}
+		if hasResourcePathParam(spec) {
+			t.Error("expected false")
+		}
+	})
+
+	t.Run("returns true for resource-specific param", func(t *testing.T) {
+		spec := &docs.EndpointSpec{
+			Params: []docs.ParamSpec{
+				{Name: "workspace_slug", Location: docs.ParamPath},
+				{Name: "project_id", Location: docs.ParamPath},
+				{Name: "state_id", Location: docs.ParamPath},
+			},
+		}
+		if !hasResourcePathParam(spec) {
+			t.Error("expected true")
+		}
+	})
+
+	t.Run("ignores body params", func(t *testing.T) {
+		spec := &docs.EndpointSpec{
+			Params: []docs.ParamSpec{
+				{Name: "workspace_slug", Location: docs.ParamPath},
+				{Name: "name", Location: docs.ParamBody},
+			},
+		}
+		if hasResourcePathParam(spec) {
+			t.Error("expected false - body params don't count")
+		}
+	})
 }
 
 func TestFindSpecByMethod(t *testing.T) {
