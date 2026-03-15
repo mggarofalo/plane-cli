@@ -423,10 +423,10 @@ func TestEnsureUpdate(t *testing.T) {
 func TestEnsureCustomMatchField(t *testing.T) {
 	updateCalled := false
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == "GET":
+		switch r.Method {
+		case "GET":
 			fmt.Fprint(w, `{"results": [{"id": "id1", "name": "State1", "color": "#FF0000"}, {"id": "id2", "name": "State2", "color": "#00FF00"}], "next_page_results": false}`)
-		case r.Method == "PATCH":
+		case "PATCH":
 			updateCalled = true
 			fmt.Fprint(w, `{"id": "id2", "name": "State2", "color": "#0000FF"}`)
 		default:
