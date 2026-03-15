@@ -235,25 +235,13 @@ func resolveProjectIdentifier(identifier string) (string, error) {
 
 	client, err := NewClient()
 	if err != nil {
-		if flagStrict {
-			return "", &cmdgen.ResolutionError{
-				Msg: fmt.Sprintf("could not resolve project identifier %q: %v", identifier, err),
-			}
-		}
-		fmt.Fprintf(os.Stderr, "Warning: could not resolve project identifier %q: %v; passing literal value\n", identifier, err)
-		return identifier, nil
+		return "", err
 	}
 
 	svc := api.NewProjectsService(client)
 	resp, err := svc.List(context.Background(), api.PaginationParams{PerPage: 100})
 	if err != nil {
-		if flagStrict {
-			return "", &cmdgen.ResolutionError{
-				Msg: fmt.Sprintf("could not resolve project identifier %q: %v", identifier, err),
-			}
-		}
-		fmt.Fprintf(os.Stderr, "Warning: could not resolve project identifier %q: %v; passing literal value\n", identifier, err)
-		return identifier, nil
+		return "", fmt.Errorf("resolving project identifier %q: %w", identifier, err)
 	}
 
 	for _, p := range resp.Results {
