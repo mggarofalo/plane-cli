@@ -24,6 +24,7 @@ var (
 	flagAPIKey    string
 	flagVerbose   bool
 	flagQuiet     bool
+	flagStrict    bool
 	flagPerPage   int
 	flagCursor    string
 	flagAll       bool
@@ -53,6 +54,7 @@ func init() {
 	pf.StringVar(&flagAPIKey, "api-key", "", "API key (prefer keyring or env var)")
 	pf.BoolVar(&flagVerbose, "verbose", false, "Debug HTTP logging (tokens redacted)")
 	pf.BoolVarP(&flagQuiet, "quiet", "q", false, "Suppress informational stderr messages")
+	pf.BoolVar(&flagStrict, "strict", false, "Treat name-resolution failures as hard errors (exit 4)")
 	pf.IntVar(&flagPerPage, "per-page", 100, "Items per page (max 100)")
 	pf.StringVar(&flagCursor, "cursor", "", "Pagination cursor")
 	pf.BoolVar(&flagAll, "all", false, "Auto-paginate and return all results")
@@ -122,6 +124,7 @@ func registerDynamicCommands() {
 		FlagField:        &flagField,
 		FlagFields:       &flagFields,
 		FlagQuiet:        &flagQuiet,
+		FlagStrict:       &flagStrict,
 		Profile:          profile,
 		BaseURL:          docsURL,
 	}
@@ -232,13 +235,25 @@ func resolveProjectIdentifier(identifier string) (string, error) {
 
 	client, err := NewClient()
 	if err != nil {
-		return "", err
+		if flagStrict {
+			return "", &cmdgen.ResolutionError{
+				Msg: fmt.Sprintf("could not resolve project identifier %q: %v", identifier, err),
+			}
+		}
+		fmt.Fprintf(os.Stderr, "Warning: could not resolve project identifier %q: %v; passing literal value\n", identifier, err)
+		return identifier, nil
 	}
 
 	svc := api.NewProjectsService(client)
 	resp, err := svc.List(context.Background(), api.PaginationParams{PerPage: 100})
 	if err != nil {
-		return "", fmt.Errorf("resolving project identifier %q: %w", identifier, err)
+		if flagStrict {
+			return "", &cmdgen.ResolutionError{
+				Msg: fmt.Sprintf("could not resolve project identifier %q: %v", identifier, err),
+			}
+		}
+		fmt.Fprintf(os.Stderr, "Warning: could not resolve project identifier %q: %v; passing literal value\n", identifier, err)
+		return identifier, nil
 	}
 
 	for _, p := range resp.Results {
@@ -248,7 +263,13 @@ func resolveProjectIdentifier(identifier string) (string, error) {
 	if id, ok := resolvedProjects[upper]; ok {
 		return id, nil
 	}
-	return "", fmt.Errorf("project with identifier %q not found", identifier)
+	if flagStrict {
+		return "", &cmdgen.ResolutionError{
+			Msg: fmt.Sprintf("could not resolve project identifier %q: no matching project found", identifier),
+		}
+	}
+	fmt.Fprintf(os.Stderr, "Warning: could not resolve project identifier %q; passing literal value\n", identifier)
+	return identifier, nil
 }
 
 // PaginationParams returns pagination params from flags.
