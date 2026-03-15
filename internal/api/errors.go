@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 )
@@ -71,4 +72,44 @@ func ExitCodeFromError(err error) int {
 		return apiErr.ExitCode()
 	}
 	return ExitGeneralError
+}
+
+// JSONErrorEnvelope is the structured JSON error format emitted to stderr
+// when --output json is active. It provides machine-parseable error details
+// so that agents and scripts do not need to regex-parse plain text errors.
+type JSONErrorEnvelope struct {
+	Error    bool   `json:"error"`
+	Code     int    `json:"code"`
+	ExitCode int    `json:"exit_code"`
+	Message  string `json:"message"`
+	URL      string `json:"url,omitempty"`
+}
+
+// FormatErrorJSON returns a compact JSON byte slice representing the error.
+// For APIError, it includes the HTTP status code and URL.
+// For other errors, code is 0 and url is omitted.
+func FormatErrorJSON(err error) []byte {
+	if err == nil {
+		return nil
+	}
+
+	env := JSONErrorEnvelope{Error: true}
+
+	if apiErr, ok := err.(*APIError); ok {
+		env.Code = apiErr.StatusCode
+		env.ExitCode = apiErr.ExitCode()
+		env.URL = apiErr.URL
+		if apiErr.Body != "" {
+			env.Message = apiErr.Body
+		} else {
+			env.Message = apiErr.Status
+		}
+	} else {
+		env.Code = 0
+		env.ExitCode = ExitGeneralError
+		env.Message = err.Error()
+	}
+
+	data, _ := json.Marshal(env)
+	return data
 }

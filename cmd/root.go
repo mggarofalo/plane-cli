@@ -64,10 +64,26 @@ func Execute() int {
 	waitForPendingUpdates(5 * time.Second)
 
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		if outputFormat() == "json" {
+			fmt.Fprintln(os.Stderr, string(api.FormatErrorJSON(err)))
+		} else {
+			fmt.Fprintln(os.Stderr, err)
+		}
 		return api.ExitCodeFromError(err)
 	}
 	return api.ExitSuccess
+}
+
+// outputFormat returns the resolved output format string ("json" or "table").
+// It mirrors the auto-detection logic in Formatter().
+func outputFormat() string {
+	if flagOutput != "" {
+		return flagOutput
+	}
+	if term.IsTerminal(int(os.Stdout.Fd())) {
+		return "table"
+	}
+	return "json"
 }
 
 // registerDynamicCommands creates Cobra commands for each API resource topic.
