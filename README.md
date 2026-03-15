@@ -6,6 +6,29 @@ Commands are dynamically generated from the Plane API documentation, so the CLI 
 
 ## Install
 
+### Homebrew (macOS / Linux)
+
+```bash
+brew install mggarofalo/tap/plane
+```
+
+### Scoop (Windows)
+
+```powershell
+scoop bucket add mggarofalo https://github.com/mggarofalo/scoop-bucket
+scoop install plane
+```
+
+### Go install
+
+```bash
+go install github.com/mggarofalo/plane-cli@latest
+```
+
+### Prebuilt binaries
+
+Download from [Releases](https://github.com/mggarofalo/plane-cli/releases) for Linux, macOS, and Windows (amd64/arm64).
+
 ### From source
 
 ```bash
@@ -19,10 +42,6 @@ make install  # builds and installs "plane" to $GOPATH/bin
 ```bash
 make build    # output: bin/plane (bin/plane.exe on Windows)
 ```
-
-### Prebuilt binaries
-
-Download from [Releases](https://github.com/mggarofalo/plane-cli/releases) for Linux, macOS, and Windows (amd64/arm64).
 
 ## Quick start
 
@@ -73,6 +92,7 @@ plane auth switch staging             # Switch active profile
 | `PLANE_WORKSPACE` | Default workspace slug |
 | `PLANE_PROFILE` | Override active profile |
 | `PLANE_DOCS_URL` | Custom docs base URL |
+| `PLANE_NO_UPDATE_CHECK` | Set to `1` to disable startup update check |
 
 Resolution order: CLI flag > environment variable > config file > default.
 
@@ -89,13 +109,14 @@ plane auth session
 ### Global flags
 
 ```
--w, --workspace   Workspace slug
--p, --project     Project ID or identifier (e.g., MYPROJECT)
--o, --output      Output format: json (default), table
-    --all         Auto-paginate and return all results
-    --per-page    Items per page, 1-100 (default: 100)
-    --cursor      Pagination cursor for next page
-    --verbose     Debug HTTP logging (tokens redacted)
+-w, --workspace        Workspace slug
+-p, --project          Project ID or identifier (e.g., MYPROJECT)
+-o, --output           Output format: json (default), table
+    --all              Auto-paginate and return all results
+    --per-page         Items per page, 1-100 (default: 100)
+    --cursor           Pagination cursor for next page
+    --verbose          Debug HTTP logging (tokens redacted)
+    --no-update-check  Disable startup update check
 ```
 
 ### Output formats
@@ -188,6 +209,27 @@ plane docs issue create       # Show endpoint details
 plane docs update             # Refresh docs index
 plane docs update-specs       # Pre-cache all endpoint specs
 ```
+
+## Self-update
+
+The CLI can update itself to the latest GitHub release:
+
+```bash
+plane update          # Download and install the latest version
+plane update --check  # Check for updates without installing
+```
+
+On each invocation, the CLI checks for new versions in the background (at most once every 24 hours). If a newer version is available, a one-line notice is printed to stderr:
+
+```
+A new version of plane is available (v0.2.0). Run "plane update" to upgrade.
+```
+
+The check is skipped when:
+- stdout is not a TTY (piped/scripted usage)
+- `--no-update-check` flag is set
+- `PLANE_NO_UPDATE_CHECK=1` environment variable is set
+- Running a development build (version "dev")
 
 ## Exit codes
 

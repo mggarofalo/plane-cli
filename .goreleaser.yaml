@@ -31,8 +31,41 @@ checksum:
 
 changelog:
   sort: asc
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Bug Fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Maintenance
+      order: 999
   filters:
     exclude:
       - "^docs:"
       - "^test:"
       - "^ci:"
+
+brews:
+  - name: plane
+    repository:
+      owner: mggarofalo
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: "https://github.com/mggarofalo/plane-cli"
+    description: "CLI for the Plane project management API"
+    license: "MIT"
+    install: |
+      bin.install "plane"
+    test: |
+      system "#{bin}/plane", "version"
+
+scoops:
+  - name: plane
+    repository:
+      owner: mggarofalo
+      name: scoop-bucket
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: "https://github.com/mggarofalo/plane-cli"
+    description: "CLI for the Plane project management API"
+    license: "MIT"
