@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -80,6 +81,11 @@ Run 'plane docs update' to refresh the cache.`,
 				fmt.Fprintf(os.Stderr, "No match for %q in topic %q. Available pages:\n\n", action, topicName)
 			}
 			return showTopic(topic)
+		}
+
+		// When --output json, emit structured endpoint spec instead of raw markdown
+		if outputFormat() == "json" {
+			return fetchAndPrintSpec(cmd.Context(), topicName, *entry)
 		}
 
 		return fetchAndPrint(entry.URL)
@@ -288,4 +294,52 @@ func fetchAndPrint(url string) error {
 		fmt.Fprintf(os.Stderr, "\n---\nSource: %s\n", url)
 	}
 	return nil
+}
+
+// fetchAndPrintSpec resolves the endpoint spec for an entry (from cache or by
+// fetching and parsing the doc page) and outputs it as structured JSON.
+func fetchAndPrintSpec(ctx context.Context, topicName string, entry docs.Entry) error {
+	cfg, err := auth.LoadConfig()
+	if err != nil {
+		return fmt.Errorf("loading config: %w", err)
+	}
+
+	profile := cfg.ActiveProfile
+	cmdName := cmdgen.DeriveSubcommandName(entry.Title, topicName)
+
+	// Try the spec cache first
+	if cmdName != "" {
+		if cached, err := docs.LoadSpec(profile, topicName, cmdName); err == nil && cached != nil {
+			return printSpecJSON(&cached.Spec)
+		}
+	}
+
+	// Fetch the doc page and parse the spec
+	if !flagQuiet {
+		fmt.Fprintf(os.Stderr, "Fetching spec from %s ...\n", entry.URL)
+	}
+	markdown, err := docs.Fetch(ctx, entry.URL)
+	if err != nil {
+		return err
+	}
+
+	spec := docs.ParseEndpointPage(markdown, topicName, entry)
+	if spec == nil {
+		return fmt.Errorf("could not parse endpoint spec from %s", entry.URL)
+	}
+
+	// Best-effort cache write
+	resolver := &auth.Resolver{Config: cfg}
+	baseURL := resolver.ResolveDocsURL(flagDocsURL)
+	_ = docs.WriteSpec(profile, baseURL, spec)
+
+	return printSpecJSON(spec)
+}
+
+// printSpecJSON writes an EndpointSpec to stdout as indented JSON.
+func printSpecJSON(spec *docs.EndpointSpec) error {
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	enc.SetEscapeHTML(false)
+	return enc.Encode(spec)
 }

@@ -18,6 +18,7 @@ type ParamSpec struct {
 	Required    bool          `json:"required"`
 	Description string        `json:"description,omitempty"`
 	Location    ParamLocation `json:"location"`
+	Enum        []string      `json:"enum,omitempty"` // valid values when extractable from docs
 }
 
 // EndpointSpec describes a parsed API endpoint.
