@@ -582,8 +582,16 @@ func formatResponse(respBody []byte, deps *Deps) error {
 
 	// --fields: extract multiple fields, output TSV
 	if deps.FlagFields != nil && *deps.FlagFields != "" {
-		paths := strings.Split(*deps.FlagFields, ",")
-		return output.ExtractFields(os.Stdout, respBody, paths)
+		var paths []string
+		for _, p := range strings.Split(*deps.FlagFields, ",") {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				paths = append(paths, p)
+			}
+		}
+		if len(paths) > 0 {
+			return output.ExtractFields(os.Stdout, respBody, paths)
+		}
 	}
 
 	f := deps.Formatter()
