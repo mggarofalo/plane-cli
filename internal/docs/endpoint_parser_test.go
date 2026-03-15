@@ -251,9 +251,15 @@ func TestExtractEnum(t *testing.T) {
 		{"one of: active, paused, completed", []string{"active", "paused", "completed"}},
 		{"Values: open, closed", []string{"open", "closed"}},
 		{"options: draft, published, archived", []string{"draft", "published", "archived"}},
-		{"The work item name", nil},                             // no enum
-		{"A single value", nil},                                 // no enum
+		{"The work item name", nil},                                          // no enum
+		{"A single value", nil},                                              // no enum
 		{"enum: started, stopped, pending", []string{"started", "stopped", "pending"}},
+		{"This option controls the behavior", nil},                           // "option" in prose, no enum list
+		{"The optional value for filtering", nil},                            // "optional" + "value" but no list
+		{"List of assignee UUIDs", nil},                                      // "List" but no comma-separated values
+		{"HTML description", nil},                                            // short desc, no enum
+		{"Start date", nil},                                                  // short desc, no enum
+		{"The project identifier value, used for lookup", nil},               // "value" in prose, not an enum
 	}
 
 	for _, tt := range tests {

@@ -83,8 +83,10 @@ Run 'plane docs update' to refresh the cache.`,
 			return showTopic(topic)
 		}
 
-		// When --output json, emit structured endpoint spec instead of raw markdown
-		if outputFormat() == "json" {
+		// When --output json is explicitly set, emit structured endpoint spec
+		// instead of raw markdown. Only check the flag value (not auto-detect
+		// from TTY) so piping docs to less/grep still gets markdown.
+		if flagOutput == "json" {
 			return fetchAndPrintSpec(cmd.Context(), topicName, *entry)
 		}
 
