@@ -45,6 +45,8 @@ type Deps struct {
 	FlagAll          *bool
 	FlagPerPage      *int
 	FlagDryRun       *bool
+	FlagField        *string
+	FlagFields       *string
 	Profile          string
 	BaseURL          string
 }
@@ -573,6 +575,25 @@ func injectGlobalBodyParams(body map[string]any, spec *docs.EndpointSpec, worksp
 }
 
 func formatResponse(respBody []byte, deps *Deps) error {
+	// --field: extract a single field, output raw value
+	if deps.FlagField != nil && *deps.FlagField != "" {
+		return output.ExtractField(os.Stdout, respBody, *deps.FlagField)
+	}
+
+	// --fields: extract multiple fields, output TSV
+	if deps.FlagFields != nil && *deps.FlagFields != "" {
+		var paths []string
+		for _, p := range strings.Split(*deps.FlagFields, ",") {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				paths = append(paths, p)
+			}
+		}
+		if len(paths) > 0 {
+			return output.ExtractFields(os.Stdout, respBody, paths)
+		}
+	}
+
 	f := deps.Formatter()
 
 	// Try to format as dynamic table if table output
@@ -840,4 +861,6 @@ func GenerateHelp(w io.Writer, topicName, cmdName string, spec *docs.EndpointSpe
 	fmt.Fprintln(w, "  -o, --output\t\tOutput format: json, table")
 	fmt.Fprintln(w, "      --all\t\tAuto-paginate and return all results")
 	fmt.Fprintln(w, "  -n, --dry-run\t\tPrint request details without executing")
+	fmt.Fprintln(w, "      --field\t\tExtract a single field (supports dotted paths)")
+	fmt.Fprintln(w, "      --fields\t\tExtract multiple fields as TSV (comma-separated)")
 }

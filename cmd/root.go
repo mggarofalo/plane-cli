@@ -27,6 +27,8 @@ var (
 	flagCursor    string
 	flagAll       bool
 	flagDryRun    bool
+	flagField     string
+	flagFields    string
 )
 
 var rootCmd = &cobra.Command{
@@ -53,6 +55,9 @@ func init() {
 	pf.StringVar(&flagCursor, "cursor", "", "Pagination cursor")
 	pf.BoolVar(&flagAll, "all", false, "Auto-paginate and return all results")
 	pf.BoolVarP(&flagDryRun, "dry-run", "n", false, "Print request details without executing")
+	pf.StringVar(&flagField, "field", "", "Extract a single field from JSON response (supports dotted paths, e.g. state_detail.name)")
+	pf.StringVar(&flagFields, "fields", "", "Extract multiple fields as TSV (comma-separated, e.g. id,name,state_detail.name)")
+	rootCmd.MarkFlagsMutuallyExclusive("field", "fields")
 }
 
 // Execute runs the root command and returns an exit code.
@@ -112,6 +117,8 @@ func registerDynamicCommands() {
 		FlagAll:          &flagAll,
 		FlagPerPage:      &flagPerPage,
 		FlagDryRun:       &flagDryRun,
+		FlagField:        &flagField,
+		FlagFields:       &flagFields,
 		Profile:          profile,
 		BaseURL:          docsURL,
 	}

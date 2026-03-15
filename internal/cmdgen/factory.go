@@ -64,6 +64,7 @@ var globalFlagNames = map[string]bool{
 	"api-url": true, "api-key": true, "verbose": true,
 	"per-page": true, "cursor": true, "all": true,
 	"dry-run": true, "help": true,
+	"field": true, "fields": true,
 }
 
 // BuildEndpointCommand creates a fully-flagged command from a cached spec (Mode A).
@@ -255,6 +256,12 @@ func applyGlobalFlags(cmd *cobra.Command, parsed *ParsedArgs) {
 	}
 	if v := parsed.Get("n"); v == "true" || v == "1" {
 		pf.Set("dry-run", "true")
+	}
+	if v := parsed.Get("field"); v != "" && v != "true" {
+		pf.Set("field", v)
+	}
+	if v := parsed.Get("fields"); v != "" && v != "true" {
+		pf.Set("fields", v)
 	}
 }
 
