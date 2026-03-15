@@ -59,6 +59,7 @@ func init() {
 	pf.BoolVarP(&flagDryRun, "dry-run", "n", false, "Print request details without executing")
 	pf.StringVar(&flagField, "field", "", "Extract a single field from JSON response (supports dotted paths, e.g. state_detail.name)")
 	pf.StringVar(&flagFields, "fields", "", "Extract multiple fields as TSV (comma-separated, e.g. id,name,state_detail.name)")
+	pf.BoolVar(&flagNoUpdateCheck, "no-update-check", false, "Disable startup update check")
 	rootCmd.MarkFlagsMutuallyExclusive("field", "fields")
 }
 
@@ -66,9 +67,17 @@ func init() {
 func Execute() int {
 	registerDynamicCommands()
 
+	// Start background update check before command execution.
+	// The PersistentPreRun hook fires after flag parsing, so we use
+	// cobra.OnInitialize instead to start the check as early as possible.
+	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
+		startUpdateCheck()
+	}
+
 	err := rootCmd.Execute()
 
 	waitForPendingUpdates(5 * time.Second)
+	printUpdateNotice(500 * time.Millisecond)
 
 	if err != nil {
 		if outputFormat() == "json" {
