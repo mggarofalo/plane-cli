@@ -165,7 +165,7 @@ func ExecuteSpec(ctx context.Context, cmd *cobra.Command, spec *docs.EndpointSpe
 		return err
 	}
 	// Inject global path params (project_id, workspace_slug) when spec has them as body params
-	body = injectGlobalBodyParams(body, spec, client.Workspace, projectID)
+	body = InjectGlobalBodyParams(body, spec, client.Workspace, projectID)
 
 	// Snapshot body before relation extraction mutates it (for dry-run output)
 	var snapshot map[string]any
@@ -177,7 +177,7 @@ func ExecuteSpec(ctx context.Context, cmd *cobra.Command, spec *docs.EndpointSpe
 	// Only extract for POST — PATCH/PUT may legitimately include these fields.
 	var relations map[string]string
 	if spec.Method == "POST" {
-		relations = extractRelationParams(body)
+		relations = ExtractRelationParams(body)
 	}
 
 	// Dry-run: print what would be sent and return early
@@ -237,7 +237,7 @@ func ExecuteSpec(ctx context.Context, cmd *cobra.Command, spec *docs.EndpointSpe
 
 	// Handle post-creation actions for many-to-many relations
 	if len(relations) > 0 {
-		postCreateActions(ctx, relations, respBody, client, projectID, deps)
+		PostCreateActions(ctx, relations, respBody, client, projectID, deps)
 	}
 
 	return nil
@@ -275,7 +275,7 @@ func ExecuteSpecFromArgs(ctx context.Context, spec *docs.EndpointSpec, parsed *P
 	if err != nil {
 		return err
 	}
-	body = injectGlobalBodyParams(body, spec, client.Workspace, projectID)
+	body = InjectGlobalBodyParams(body, spec, client.Workspace, projectID)
 
 	// Snapshot body before relation extraction mutates it (for dry-run output)
 	var snapshot map[string]any
@@ -287,7 +287,7 @@ func ExecuteSpecFromArgs(ctx context.Context, spec *docs.EndpointSpec, parsed *P
 	// Only extract for POST — PATCH/PUT may legitimately include these fields.
 	var relations map[string]string
 	if spec.Method == "POST" {
-		relations = extractRelationParams(body)
+		relations = ExtractRelationParams(body)
 	}
 
 	// Dry-run: print what would be sent and return early
@@ -344,7 +344,7 @@ func ExecuteSpecFromArgs(ctx context.Context, spec *docs.EndpointSpec, parsed *P
 
 	// Handle post-creation actions for many-to-many relations
 	if len(relations) > 0 {
-		postCreateActions(ctx, relations, respBody, client, projectID, deps)
+		PostCreateActions(ctx, relations, respBody, client, projectID, deps)
 	}
 
 	return nil
@@ -606,10 +606,10 @@ func collectBodyParamsFromArgs(ctx context.Context, spec *docs.EndpointSpec, par
 	return body, nil
 }
 
-// injectGlobalBodyParams adds project_id and workspace_slug to the body when
+// InjectGlobalBodyParams adds project_id and workspace_slug to the body when
 // the spec lists them as body params. Some Plane endpoints (e.g., cycle create)
 // require these in the body even though they're also in the URL path.
-func injectGlobalBodyParams(body map[string]any, spec *docs.EndpointSpec, workspace, projectID string) map[string]any {
+func InjectGlobalBodyParams(body map[string]any, spec *docs.EndpointSpec, workspace, projectID string) map[string]any {
 	for _, p := range spec.Params {
 		if p.Location != docs.ParamBody {
 			continue
@@ -822,11 +822,11 @@ var relationParams = map[string]struct{}{
 	"cycle":  {},
 }
 
-// extractRelationParams removes many-to-many relation fields (module, cycle)
+// ExtractRelationParams removes many-to-many relation fields (module, cycle)
 // from the body map and returns them separately. These fields are silently
 // ignored by the Plane API on issue creation and must be handled via follow-up
 // API calls.
-func extractRelationParams(body map[string]any) map[string]string {
+func ExtractRelationParams(body map[string]any) map[string]string {
 	if body == nil {
 		return nil
 	}
@@ -851,8 +851,8 @@ func extractRelationParams(body map[string]any) map[string]string {
 	return relations
 }
 
-// extractCreatedID parses the API response JSON and returns the "id" field.
-func extractCreatedID(respBody []byte) (string, error) {
+// ExtractCreatedID parses the API response JSON and returns the "id" field.
+func ExtractCreatedID(respBody []byte) (string, error) {
 	var result map[string]any
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		return "", fmt.Errorf("parsing response to extract issue ID: %w", err)
@@ -864,12 +864,12 @@ func extractCreatedID(respBody []byte) (string, error) {
 	return id, nil
 }
 
-// postCreateActions performs follow-up API calls to attach a newly created issue
+// PostCreateActions performs follow-up API calls to attach a newly created issue
 // to modules and/or cycles. The Plane API requires separate endpoints for these
 // many-to-many relationships. Failures are printed as warnings to stderr; the
 // created issue is never rolled back.
-func postCreateActions(ctx context.Context, relations map[string]string, respBody []byte, client *api.Client, projectID string, deps *Deps) {
-	issueID, err := extractCreatedID(respBody)
+func PostCreateActions(ctx context.Context, relations map[string]string, respBody []byte, client *api.Client, projectID string, deps *Deps) {
+	issueID, err := ExtractCreatedID(respBody)
 	if err != nil {
 		Infof(deps, "Warning: issue created but could not extract ID for relation attach: %v\n", err)
 		return

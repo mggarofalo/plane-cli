@@ -21,7 +21,7 @@ func TestExtractRelationParams(t *testing.T) {
 			"state":  "state-uuid",
 		}
 
-		relations := extractRelationParams(body)
+		relations := ExtractRelationParams(body)
 
 		if relations["module"] != "module-uuid-123" {
 			t.Errorf("expected module=module-uuid-123, got %q", relations["module"])
@@ -53,7 +53,7 @@ func TestExtractRelationParams(t *testing.T) {
 			"state": "state-uuid",
 		}
 
-		relations := extractRelationParams(body)
+		relations := ExtractRelationParams(body)
 
 		if relations != nil {
 			t.Errorf("expected nil, got %v", relations)
@@ -61,7 +61,7 @@ func TestExtractRelationParams(t *testing.T) {
 	})
 
 	t.Run("handles nil body", func(t *testing.T) {
-		relations := extractRelationParams(nil)
+		relations := ExtractRelationParams(nil)
 
 		if relations != nil {
 			t.Errorf("expected nil, got %v", relations)
@@ -74,7 +74,7 @@ func TestExtractRelationParams(t *testing.T) {
 			"module": 12345,
 		}
 
-		relations := extractRelationParams(body)
+		relations := ExtractRelationParams(body)
 
 		if relations != nil {
 			t.Errorf("expected nil, got %v", relations)
@@ -92,7 +92,7 @@ func TestExtractRelationParams(t *testing.T) {
 			"module": "",
 		}
 
-		relations := extractRelationParams(body)
+		relations := ExtractRelationParams(body)
 
 		if relations != nil {
 			t.Errorf("expected nil, got %v", relations)
@@ -105,7 +105,7 @@ func TestExtractRelationParams(t *testing.T) {
 			"module": "module-uuid-123",
 		}
 
-		relations := extractRelationParams(body)
+		relations := ExtractRelationParams(body)
 
 		if relations["module"] != "module-uuid-123" {
 			t.Errorf("expected module=module-uuid-123, got %q", relations["module"])
@@ -120,7 +120,7 @@ func TestExtractCreatedID(t *testing.T) {
 	t.Run("extracts id from valid response", func(t *testing.T) {
 		resp := []byte(`{"id": "abc-123", "name": "Test Issue"}`)
 
-		id, err := extractCreatedID(resp)
+		id, err := ExtractCreatedID(resp)
 
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -133,7 +133,7 @@ func TestExtractCreatedID(t *testing.T) {
 	t.Run("returns error for missing id", func(t *testing.T) {
 		resp := []byte(`{"name": "Test Issue"}`)
 
-		_, err := extractCreatedID(resp)
+		_, err := ExtractCreatedID(resp)
 
 		if err == nil {
 			t.Fatal("expected error, got nil")
@@ -143,7 +143,7 @@ func TestExtractCreatedID(t *testing.T) {
 	t.Run("returns error for invalid JSON", func(t *testing.T) {
 		resp := []byte(`not json`)
 
-		_, err := extractCreatedID(resp)
+		_, err := ExtractCreatedID(resp)
 
 		if err == nil {
 			t.Fatal("expected error, got nil")
@@ -153,7 +153,7 @@ func TestExtractCreatedID(t *testing.T) {
 	t.Run("returns error for empty id", func(t *testing.T) {
 		resp := []byte(`{"id": ""}`)
 
-		_, err := extractCreatedID(resp)
+		_, err := ExtractCreatedID(resp)
 
 		if err == nil {
 			t.Fatal("expected error, got nil")
@@ -163,7 +163,7 @@ func TestExtractCreatedID(t *testing.T) {
 	t.Run("returns error for non-string id", func(t *testing.T) {
 		resp := []byte(`{"id": 12345}`)
 
-		_, err := extractCreatedID(resp)
+		_, err := ExtractCreatedID(resp)
 
 		if err == nil {
 			t.Fatal("expected error, got nil")
@@ -518,7 +518,7 @@ func TestPostCreateActions_GracefulWarnings(t *testing.T) {
 		relations := map[string]string{"module": "mod-uuid"}
 
 		// Should not panic; warnings go to stderr
-		postCreateActions(context.Background(), relations, issueResp, client, "proj-uuid", &Deps{})
+		PostCreateActions(context.Background(), relations, issueResp, client, "proj-uuid", &Deps{})
 	})
 
 	t.Run("warns on cycle attach failure", func(t *testing.T) {
@@ -531,7 +531,7 @@ func TestPostCreateActions_GracefulWarnings(t *testing.T) {
 		client := api.NewClient(srv.URL, "test-token", "test-ws", false, nil)
 		relations := map[string]string{"cycle": "cyc-uuid"}
 
-		postCreateActions(context.Background(), relations, issueResp, client, "proj-uuid", &Deps{})
+		PostCreateActions(context.Background(), relations, issueResp, client, "proj-uuid", &Deps{})
 	})
 
 	t.Run("warns on extractCreatedID failure", func(t *testing.T) {
@@ -543,7 +543,7 @@ func TestPostCreateActions_GracefulWarnings(t *testing.T) {
 		client := api.NewClient(srv.URL, "test-token", "test-ws", false, nil)
 		relations := map[string]string{"module": "mod-uuid"}
 
-		postCreateActions(context.Background(), relations, []byte(`not json`), client, "proj-uuid", &Deps{})
+		PostCreateActions(context.Background(), relations, []byte(`not json`), client, "proj-uuid", &Deps{})
 	})
 
 	t.Run("succeeds when endpoints return 200", func(t *testing.T) {
@@ -563,7 +563,7 @@ func TestPostCreateActions_GracefulWarnings(t *testing.T) {
 		client := api.NewClient(srv.URL, "test-token", "test-ws", false, nil)
 		relations := map[string]string{"module": "mod-uuid", "cycle": "cyc-uuid"}
 
-		postCreateActions(context.Background(), relations, issueResp, client, "proj-uuid", &Deps{})
+		PostCreateActions(context.Background(), relations, issueResp, client, "proj-uuid", &Deps{})
 
 		if !moduleCalled {
 			t.Error("expected module endpoint to be called")

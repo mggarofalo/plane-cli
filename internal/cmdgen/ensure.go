@@ -185,7 +185,7 @@ func executeEnsure(ctx context.Context, cmd *cobra.Command, topicName string, sp
 
 	// Collect body params from the create spec
 	body := collectEnsureBodyParams(cmd, specs.create, deps)
-	body = injectGlobalBodyParams(body, specs.create, client.Workspace, projectID)
+	body = InjectGlobalBodyParams(body, specs.create, client.Workspace, projectID)
 
 	// Ensure body is non-nil before field lookups
 	if body == nil {
@@ -363,7 +363,7 @@ func executeEnsureCreate(ctx context.Context, _ *cobra.Command, client *api.Clie
 	_ = snapshot // keep for potential dry-run logging
 
 	// Extract relation params for POST
-	relations := extractRelationParams(body)
+	relations := ExtractRelationParams(body)
 
 	if body == nil {
 		body = map[string]any{}
@@ -386,7 +386,7 @@ func executeEnsureCreate(ctx context.Context, _ *cobra.Command, client *api.Clie
 
 	// Handle post-creation actions for many-to-many relations
 	if len(relations) > 0 {
-		postCreateActions(ctx, relations, respBody, client, projectID, deps)
+		PostCreateActions(ctx, relations, respBody, client, projectID, deps)
 	}
 
 	return nil

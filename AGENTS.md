@@ -96,7 +96,7 @@ When a user runs `plane issue create -p FOO --name "bar" --state "Todo"`:
    - Resolves project identifier `FOO` → UUID via API call (cached per session)
    - Builds URL from the spec's path template, substituting `{workspace_slug}` and `{project_id}`
    - Collects body params from flags: `--name` → `{"name": "bar"}`, `--state` → resolves "Todo" to UUID via `resolveIfNeeded()`
-   - Injects `project_id` into body if the spec requires it (`injectGlobalBodyParams`)
+   - Injects `project_id` into body if the spec requires it (`InjectGlobalBodyParams`)
    - Executes `client.Post()` with the URL and body
    - Formats response via `formatResponse()` (JSON or dynamic table)
 
