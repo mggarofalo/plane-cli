@@ -119,6 +119,12 @@ func PopulateFromAPI(ctx context.Context, store *Store, workspace, projectID str
 		return nil, fmt.Errorf("parsing %s: %w", kind, err)
 	}
 
+	// Don't overwrite a valid stale cache with empty entries from a
+	// transient API error or unrecognized response format.
+	if entries == nil {
+		return nil, nil
+	}
+
 	cached := &CachedResource{
 		FetchedAt: time.Now(),
 		Entries:   entries,

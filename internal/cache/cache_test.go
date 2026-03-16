@@ -198,8 +198,12 @@ func TestStore_LoadCorruptJSON(t *testing.T) {
 	// Write corrupt data directly
 	base, _ := store.baseDir()
 	dir := filepath.Join(base, "ws1", "proj1")
-	os.MkdirAll(dir, 0700)
-	os.WriteFile(filepath.Join(dir, "states.json"), []byte("{corrupt"), 0600)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "states.json"), []byte("{corrupt"), 0600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
 
 	loaded, err := store.Load("ws1", "proj1", KindStates)
 	if err != nil {
@@ -214,8 +218,12 @@ func TestStore_Clear(t *testing.T) {
 	store := testStore(t)
 
 	cr := &CachedResource{FetchedAt: time.Now(), Entries: []Entry{{ID: "a", Name: "A"}}}
-	store.Save("ws1", "proj1", KindStates, cr)
-	store.Save("ws2", "proj2", KindLabels, cr)
+	if err := store.Save("ws1", "proj1", KindStates, cr); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if err := store.Save("ws2", "proj2", KindLabels, cr); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
 
 	// Clear all
 	if err := store.Clear(""); err != nil {
@@ -236,8 +244,12 @@ func TestStore_ClearWorkspace(t *testing.T) {
 	store := testStore(t)
 
 	cr := &CachedResource{FetchedAt: time.Now(), Entries: []Entry{{ID: "a", Name: "A"}}}
-	store.Save("ws1", "proj1", KindStates, cr)
-	store.Save("ws2", "proj2", KindLabels, cr)
+	if err := store.Save("ws1", "proj1", KindStates, cr); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if err := store.Save("ws2", "proj2", KindLabels, cr); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
 
 	// Clear only ws1
 	if err := store.Clear("ws1"); err != nil {
@@ -258,8 +270,12 @@ func TestStore_ClearKind(t *testing.T) {
 	store := testStore(t)
 
 	cr := &CachedResource{FetchedAt: time.Now(), Entries: []Entry{{ID: "a", Name: "A"}}}
-	store.Save("ws1", "proj1", KindStates, cr)
-	store.Save("ws1", "proj1", KindLabels, cr)
+	if err := store.Save("ws1", "proj1", KindStates, cr); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if err := store.Save("ws1", "proj1", KindLabels, cr); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
 
 	if err := store.ClearKind("ws1", "proj1", KindStates); err != nil {
 		t.Fatalf("ClearKind failed: %v", err)
@@ -279,9 +295,15 @@ func TestStore_ListAll(t *testing.T) {
 	store := testStore(t)
 
 	cr := &CachedResource{FetchedAt: time.Now(), Entries: []Entry{{ID: "a", Name: "A"}}}
-	store.Save("ws1", "proj1", KindStates, cr)
-	store.Save("ws1", "", KindMembers, cr)
-	store.Save("ws2", "proj2", KindLabels, cr)
+	if err := store.Save("ws1", "proj1", KindStates, cr); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if err := store.Save("ws1", "", KindMembers, cr); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if err := store.Save("ws2", "proj2", KindLabels, cr); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
 
 	items, err := store.ListAll()
 	if err != nil {
