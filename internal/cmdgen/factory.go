@@ -69,7 +69,7 @@ func BuildTopicCommand(topicName string, topic *docs.Topic, cachedSpecs []docs.C
 var globalFlagNames = map[string]bool{
 	"workspace": true, "project": true, "output": true,
 	"api-url": true, "api-key": true, "verbose": true,
-	"quiet": true, "strict": true,
+	"quiet": true, "strict": true, "no-resolve": true,
 	"per-page": true, "cursor": true, "all": true,
 	"dry-run": true, "help": true,
 	"field": true, "fields": true,
@@ -273,6 +273,9 @@ func applyGlobalFlags(cmd *cobra.Command, parsed *ParsedArgs) {
 	}
 	if v := parsed.Get("strict"); v == "true" || v == "1" {
 		pf.Set("strict", "true")
+	}
+	if v := parsed.Get("no-resolve"); v == "true" || v == "1" {
+		pf.Set("no-resolve", "true")
 	}
 	if v := parsed.Get("field"); v != "" && v != "true" {
 		pf.Set("field", v)
