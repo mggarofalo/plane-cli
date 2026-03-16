@@ -248,3 +248,15 @@ make build && bash test_live.sh
 ```
 
 The test script creates temporary resources, validates CRUD operations, and cleans up. It exits with a non-zero code equal to the failure count.
+
+### Releasing
+
+Releases are automated via a Claude Code skill and GitHub Actions:
+
+1. **Trigger a release**: Run `/release [major|minor|patch]` (defaults to `patch`). The skill reads the latest git tag, computes the next semver, generates grouped release notes from conventional commits, and asks for approval before creating an annotated tag and pushing it.
+
+2. **What happens next**: Pushing a `v*` tag triggers `.github/workflows/release.yml`, which runs GoReleaser to build binaries for linux/darwin/windows (amd64/arm64), generate checksums, and create a GitHub Release with an auto-generated changelog.
+
+3. **Version injection**: The version is injected at build time via ldflags (see `.goreleaser.yaml`). There is no version file to edit manually.
+
+4. **Skill location**: `.claude/skills/release/SKILL.md` (repo-local)
