@@ -200,7 +200,9 @@ try {
                 $McpServers | Add-Member -NotePropertyName 'plane' -NotePropertyValue ([PSCustomObject]$PlaneServer)
             }
 
-            $Settings | ConvertTo-Json -Depth 10 | Set-Content $SettingsFile -Encoding UTF8
+            # Write UTF-8 without BOM (PS 5.x's -Encoding UTF8 emits a BOM which breaks JSON parsers)
+            $Utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+            [System.IO.File]::WriteAllText($SettingsFile, (($Settings | ConvertTo-Json -Depth 10) + "`n"), $Utf8NoBom)
             Write-Info "Merged Plane MCP configuration into $SettingsFile."
         } else {
             # Create new file
@@ -209,7 +211,9 @@ try {
                     plane = [PSCustomObject]$PlaneServer
                 }
             }
-            $Settings | ConvertTo-Json -Depth 10 | Set-Content $SettingsFile -Encoding UTF8
+            # Write UTF-8 without BOM (PS 5.x's -Encoding UTF8 emits a BOM which breaks JSON parsers)
+            $Utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+            [System.IO.File]::WriteAllText($SettingsFile, (($Settings | ConvertTo-Json -Depth 10) + "`n"), $Utf8NoBom)
             Write-Info "Created $SettingsFile with Plane MCP configuration."
         }
     }

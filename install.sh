@@ -164,7 +164,7 @@ curl -fsSL -o "${TMPDIR}/checksums.txt" "$CHECKSUMS_URL" || error "Failed to dow
 # ── Verify checksum ──────────────────────────────────────────────────────────
 
 info "Verifying checksum..."
-EXPECTED_SUM="$(grep "${ARCHIVE_NAME}" "${TMPDIR}/checksums.txt" | awk '{print $1}')"
+EXPECTED_SUM="$(grep -F "${ARCHIVE_NAME}" "${TMPDIR}/checksums.txt" | awk '{print $1}')"
 if [ -z "$EXPECTED_SUM" ]; then
     error "Archive ${ARCHIVE_NAME} not found in checksums.txt"
 fi
