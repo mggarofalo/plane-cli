@@ -3,10 +3,12 @@ package cmdgen
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/mggarofalo/plane-cli/internal/api"
@@ -1242,5 +1244,321 @@ func TestNoResolve_POST_SkipsResolution(t *testing.T) {
 	}
 	if !requestReceived {
 		t.Error("expected POST request to be made")
+	}
+}
+
+func TestWebURL_InjectedInGET(t *testing.T) {
+	issueUUID := "550e8400-e29b-41d4-a716-446655440000"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, `{"id": "%s", "name": "Test Issue", "state": "done"}`, issueUUID)
+	}))
+	defer srv.Close()
+
+	deps := &Deps{
+		NewClient: func() (*api.Client, error) {
+			return api.NewClient(srv.URL, "test-token", "test-ws", false, nil), nil
+		},
+		RequireWorkspace: func(c *api.Client) error { return nil },
+		RequireProject:   func() (string, error) { return "proj-uuid", nil },
+		PaginationParams: func() api.PaginationParams { return api.PaginationParams{PerPage: 100} },
+		Formatter:        func() output.Formatter { return output.New("json") },
+		IsUUID:           func(s string) bool { return len(s) == 36 && s[8] == '-' },
+	}
+
+	spec := &docs.EndpointSpec{
+		Method:       "GET",
+		PathTemplate: "/api/v1/workspaces/{workspace_slug}/projects/{project_id}/work-items/{work_item_id}/",
+		EntryTitle:   "Get Work Item Detail",
+		Params: []docs.ParamSpec{
+			{Name: "work_item_id", Location: docs.ParamPath, Type: "string", Required: true},
+		},
+	}
+
+	parsed := &ParsedArgs{
+		Values: map[string]string{"work-item-id": issueUUID},
+		Slices: map[string][]string{},
+	}
+
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := ExecuteSpecFromArgs(context.Background(), spec, parsed, deps)
+
+	_ = w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+	got := buf.String()
+
+	// Parse the JSON output to check for web_url
+	var result map[string]any
+	if err := json.Unmarshal([]byte(got), &result); err != nil {
+		t.Fatalf("failed to parse JSON output: %v\nOutput: %s", err, got)
+	}
+
+	webURL, ok := result["web_url"].(string)
+	if !ok {
+		t.Fatalf("web_url not found in output. Got: %s", got)
+	}
+
+	expected := srv.URL + "/test-ws/projects/proj-uuid/issues/" + issueUUID
+	if webURL != expected {
+		t.Errorf("expected web_url=%q, got %q", expected, webURL)
+	}
+}
+
+func TestWebURL_InjectedInPOST(t *testing.T) {
+	issueUUID := "660e8400-e29b-41d4-a716-446655440000"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		fmt.Fprintf(w, `{"id": "%s", "name": "New Issue"}`, issueUUID)
+	}))
+	defer srv.Close()
+
+	deps := &Deps{
+		NewClient: func() (*api.Client, error) {
+			return api.NewClient(srv.URL, "test-token", "test-ws", false, nil), nil
+		},
+		RequireWorkspace: func(c *api.Client) error { return nil },
+		RequireProject:   func() (string, error) { return "proj-uuid", nil },
+		PaginationParams: func() api.PaginationParams { return api.PaginationParams{PerPage: 100} },
+		Formatter:        func() output.Formatter { return output.New("json") },
+		IsUUID:           func(s string) bool { return len(s) == 36 && s[8] == '-' },
+	}
+
+	spec := &docs.EndpointSpec{
+		Method:       "POST",
+		PathTemplate: "/api/v1/workspaces/{workspace_slug}/projects/{project_id}/work-items/",
+		EntryTitle:   "Create Work Item",
+		Params: []docs.ParamSpec{
+			{Name: "name", Location: docs.ParamBody, Type: "string"},
+		},
+	}
+
+	parsed := &ParsedArgs{
+		Values: map[string]string{"name": "New Issue"},
+		Slices: map[string][]string{},
+	}
+
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := ExecuteSpecFromArgs(context.Background(), spec, parsed, deps)
+
+	_ = w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+	got := buf.String()
+
+	// POST to a list URL returns a single created resource; web_url should be injected
+	var result map[string]any
+	if err := json.Unmarshal([]byte(got), &result); err != nil {
+		t.Fatalf("failed to parse JSON output: %v\nOutput: %s", err, got)
+	}
+
+	webURL, ok := result["web_url"].(string)
+	if !ok {
+		t.Fatalf("web_url should be injected for POST create response. Got: %s", got)
+	}
+
+	expected := srv.URL + "/test-ws/projects/proj-uuid/issues/" + issueUUID
+	if webURL != expected {
+		t.Errorf("expected web_url=%q, got %q", expected, webURL)
+	}
+}
+
+func TestWebURL_NotInjectedForList(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, `{"results": [{"id": "a1"}, {"id": "a2"}], "total_count": 2}`)
+	}))
+	defer srv.Close()
+
+	deps := &Deps{
+		NewClient: func() (*api.Client, error) {
+			return api.NewClient(srv.URL, "test-token", "test-ws", false, nil), nil
+		},
+		RequireWorkspace: func(c *api.Client) error { return nil },
+		RequireProject:   func() (string, error) { return "proj-uuid", nil },
+		PaginationParams: func() api.PaginationParams { return api.PaginationParams{PerPage: 100} },
+		Formatter:        func() output.Formatter { return output.New("json") },
+		IsUUID:           func(s string) bool { return len(s) == 36 && s[8] == '-' },
+	}
+
+	spec := &docs.EndpointSpec{
+		Method:       "GET",
+		PathTemplate: "/api/v1/workspaces/{workspace_slug}/projects/{project_id}/work-items/",
+		EntryTitle:   "List Work Items",
+	}
+
+	parsed := &ParsedArgs{
+		Values: map[string]string{},
+		Slices: map[string][]string{},
+	}
+
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := ExecuteSpecFromArgs(context.Background(), spec, parsed, deps)
+
+	_ = w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+	got := buf.String()
+
+	// Should NOT have web_url because this is a paginated list
+	var result map[string]any
+	if err := json.Unmarshal([]byte(got), &result); err != nil {
+		t.Fatalf("failed to parse JSON output: %v\nOutput: %s", err, got)
+	}
+
+	if _, ok := result["web_url"]; ok {
+		t.Error("web_url should not be injected into paginated list responses")
+	}
+}
+
+func TestWebURL_NotInjectedWhenAlreadyPresent(t *testing.T) {
+	issueUUID := "550e8400-e29b-41d4-a716-446655440000"
+	existingURL := "https://existing.plane.so/my-ws/projects/proj/issues/" + issueUUID
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, `{"id": "%s", "name": "Test", "web_url": "%s"}`, issueUUID, existingURL)
+	}))
+	defer srv.Close()
+
+	deps := &Deps{
+		NewClient: func() (*api.Client, error) {
+			return api.NewClient(srv.URL, "test-token", "test-ws", false, nil), nil
+		},
+		RequireWorkspace: func(c *api.Client) error { return nil },
+		RequireProject:   func() (string, error) { return "proj-uuid", nil },
+		PaginationParams: func() api.PaginationParams { return api.PaginationParams{PerPage: 100} },
+		Formatter:        func() output.Formatter { return output.New("json") },
+		IsUUID:           func(s string) bool { return len(s) == 36 && s[8] == '-' },
+	}
+
+	spec := &docs.EndpointSpec{
+		Method:       "GET",
+		PathTemplate: "/api/v1/workspaces/{workspace_slug}/projects/{project_id}/work-items/{work_item_id}/",
+		EntryTitle:   "Get Work Item Detail",
+		Params: []docs.ParamSpec{
+			{Name: "work_item_id", Location: docs.ParamPath, Type: "string", Required: true},
+		},
+	}
+
+	parsed := &ParsedArgs{
+		Values: map[string]string{"work-item-id": issueUUID},
+		Slices: map[string][]string{},
+	}
+
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := ExecuteSpecFromArgs(context.Background(), spec, parsed, deps)
+
+	_ = w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+	got := buf.String()
+
+	var result map[string]any
+	if err := json.Unmarshal([]byte(got), &result); err != nil {
+		t.Fatalf("failed to parse JSON output: %v\nOutput: %s", err, got)
+	}
+
+	webURL, ok := result["web_url"].(string)
+	if !ok {
+		t.Fatal("web_url should be present")
+	}
+
+	// Should preserve the existing URL, not replace it
+	if webURL != existingURL {
+		t.Errorf("expected existing web_url=%q, got %q", existingURL, webURL)
+	}
+}
+
+func TestWebURL_ExtractableViaFieldFlag(t *testing.T) {
+	issueUUID := "550e8400-e29b-41d4-a716-446655440000"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, `{"id": "%s", "name": "Test Issue"}`, issueUUID)
+	}))
+	defer srv.Close()
+
+	fieldFlag := "web_url"
+	deps := &Deps{
+		NewClient: func() (*api.Client, error) {
+			return api.NewClient(srv.URL, "test-token", "test-ws", false, nil), nil
+		},
+		RequireWorkspace: func(c *api.Client) error { return nil },
+		RequireProject:   func() (string, error) { return "proj-uuid", nil },
+		PaginationParams: func() api.PaginationParams { return api.PaginationParams{PerPage: 100} },
+		Formatter:        func() output.Formatter { return output.New("json") },
+		IsUUID:           func(s string) bool { return len(s) == 36 && s[8] == '-' },
+		FlagField:        &fieldFlag,
+	}
+
+	spec := &docs.EndpointSpec{
+		Method:       "GET",
+		PathTemplate: "/api/v1/workspaces/{workspace_slug}/projects/{project_id}/work-items/{work_item_id}/",
+		EntryTitle:   "Get Work Item Detail",
+		Params: []docs.ParamSpec{
+			{Name: "work_item_id", Location: docs.ParamPath, Type: "string", Required: true},
+		},
+	}
+
+	parsed := &ParsedArgs{
+		Values: map[string]string{"work-item-id": issueUUID},
+		Slices: map[string][]string{},
+	}
+
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := ExecuteSpecFromArgs(context.Background(), spec, parsed, deps)
+
+	_ = w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+	got := strings.TrimSpace(buf.String())
+
+	expected := srv.URL + "/test-ws/projects/proj-uuid/issues/" + issueUUID
+	if got != expected {
+		t.Errorf("expected --field web_url to output %q, got %q", expected, got)
 	}
 }
