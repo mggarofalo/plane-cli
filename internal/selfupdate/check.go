@@ -34,6 +34,10 @@ type CheckResult struct {
 	NewVersionAvailable bool
 	// LatestVersion is the latest version string (e.g., "0.2.0").
 	LatestVersion string
+	// Release is the detected release metadata from GitHub. It is non-nil when
+	// NewVersionAvailable is true and can be passed to DownloadAndApply to
+	// avoid a second GitHub API call.
+	Release *selfupdate.Release
 }
 
 // checkCache is the on-disk format for the update-check cache.
@@ -107,9 +111,8 @@ func ShouldCheck() bool {
 	return time.Since(c.LastChecked) >= CheckInterval
 }
 
-// CheckForUpdate queries GitHub Releases for the latest version and compares
-// it against currentVersion. It updates the on-disk cache regardless of result.
-func CheckForUpdate(ctx context.Context, currentVersion string) (*CheckResult, error) {
+// newUpdater creates a selfupdate.Updater configured for plane-cli releases.
+func newUpdater() (*selfupdate.Updater, error) {
 	source, err := selfupdate.NewGitHubSource(selfupdate.GitHubConfig{})
 	if err != nil {
 		return nil, fmt.Errorf("creating GitHub source: %w", err)
@@ -123,6 +126,19 @@ func CheckForUpdate(ctx context.Context, currentVersion string) (*CheckResult, e
 		return nil, fmt.Errorf("creating updater: %w", err)
 	}
 
+	return updater, nil
+}
+
+// CheckForUpdate queries GitHub Releases for the latest version and compares
+// it against currentVersion. It updates the on-disk cache regardless of result.
+// When a newer version is found, the Release field is populated so callers can
+// pass it to DownloadAndApply without a second API call.
+func CheckForUpdate(ctx context.Context, currentVersion string) (*CheckResult, error) {
+	updater, err := newUpdater()
+	if err != nil {
+		return nil, err
+	}
+
 	latest, found, err := updater.DetectLatest(ctx, selfupdate.ParseSlug(GitHubRepo))
 	if err != nil {
 		return nil, fmt.Errorf("detecting latest version: %w", err)
@@ -133,6 +149,9 @@ func CheckForUpdate(ctx context.Context, currentVersion string) (*CheckResult, e
 	if found && latest.Version() != "" {
 		result.LatestVersion = latest.Version()
 		result.NewVersionAvailable = latest.GreaterThan(currentVersion)
+		if result.NewVersionAvailable {
+			result.Release = latest
+		}
 	}
 
 	// Always update the cache timestamp.
@@ -142,6 +161,22 @@ func CheckForUpdate(ctx context.Context, currentVersion string) (*CheckResult, e
 	})
 
 	return result, nil
+}
+
+// DownloadAndApply downloads the given release and replaces the executable at
+// exe. The release should come from CheckResult.Release to avoid a redundant
+// GitHub API call.
+func DownloadAndApply(ctx context.Context, release *selfupdate.Release, exe string) error {
+	updater, err := newUpdater()
+	if err != nil {
+		return err
+	}
+
+	if err := updater.UpdateTo(ctx, release, exe); err != nil {
+		return fmt.Errorf("applying update: %w", err)
+	}
+
+	return nil
 }
 
 // CachedLatestVersion returns the latest version from the last check, if any.

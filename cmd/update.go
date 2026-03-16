@@ -6,7 +6,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/creativeprojects/go-selfupdate"
 	selfupdate2 "github.com/mggarofalo/plane-cli/internal/selfupdate"
 	"github.com/spf13/cobra"
 )
@@ -64,37 +63,16 @@ Development builds (version "dev") skip the update check.`,
 			fmt.Fprintln(os.Stderr, "Downloading and installing...")
 		}
 
-		source, err := selfupdate.NewGitHubSource(selfupdate.GitHubConfig{})
-		if err != nil {
-			return fmt.Errorf("creating update source: %w", err)
-		}
-
-		updater, err := selfupdate.NewUpdater(selfupdate.Config{
-			Source:    source,
-			Validator: &selfupdate.ChecksumValidator{UniqueFilename: "checksums.txt"},
-		})
-		if err != nil {
-			return fmt.Errorf("creating updater: %w", err)
-		}
-
-		latest, found, err := updater.DetectLatest(ctx, selfupdate.ParseSlug(selfupdate2.GitHubRepo))
-		if err != nil {
-			return fmt.Errorf("detecting latest release: %w", err)
-		}
-		if !found {
-			return fmt.Errorf("no release found")
-		}
-
 		exe, err := os.Executable()
 		if err != nil {
 			return fmt.Errorf("locating current executable: %w", err)
 		}
 
-		if err := updater.UpdateTo(ctx, latest, exe); err != nil {
-			return fmt.Errorf("applying update: %w", err)
+		if err := selfupdate2.DownloadAndApply(ctx, result.Release, exe); err != nil {
+			return fmt.Errorf("updating: %w", err)
 		}
 
-		fmt.Fprintf(os.Stderr, "Updated to v%s.\n", latest.Version())
+		fmt.Fprintf(os.Stderr, "Updated to v%s.\n", result.LatestVersion)
 		return nil
 	},
 }
