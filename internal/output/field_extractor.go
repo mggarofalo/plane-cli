@@ -7,6 +7,37 @@ import (
 	"strings"
 )
 
+// ExtractID extracts the "id" field from a JSON response and writes the raw UUID
+// to w without a trailing newline. For arrays/paginated envelopes, it writes one
+// ID per line (each without trailing newline, separated by newlines).
+func ExtractID(w io.Writer, data []byte) error {
+	items, single, err := parseResponseItems(data)
+	if err != nil {
+		return fmt.Errorf("parsing response for id extraction: %w", err)
+	}
+
+	if single {
+		val := traversePath(items[0], "id")
+		s := formatRawValue(val)
+		_, err := fmt.Fprint(w, s)
+		return err
+	}
+
+	for i, item := range items {
+		val := traversePath(item, "id")
+		s := formatRawValue(val)
+		if i > 0 {
+			if _, err := fmt.Fprint(w, "\n"); err != nil {
+				return err
+			}
+		}
+		if _, err := fmt.Fprint(w, s); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ExtractField extracts a single field (supporting dotted paths) from JSON data
 // and writes the raw value to w. For arrays/paginated envelopes, it writes one
 // value per line. Strings are printed without JSON quotes.

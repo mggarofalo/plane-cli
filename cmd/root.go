@@ -32,6 +32,7 @@ var (
 	flagNoResolve bool
 	flagField     string
 	flagFields    string
+	flagIDOnly    bool
 )
 
 var rootCmd = &cobra.Command{
@@ -63,8 +64,12 @@ func init() {
 	pf.BoolVar(&flagNoResolve, "no-resolve", false, "Skip name-to-UUID resolution; pass all values as literal strings")
 	pf.StringVar(&flagField, "field", "", "Extract a single field from JSON response (supports dotted paths, e.g. state_detail.name)")
 	pf.StringVar(&flagFields, "fields", "", "Extract multiple fields as TSV (comma-separated, e.g. id,name,state_detail.name)")
+	pf.BoolVar(&flagIDOnly, "id-only", false, "Print only the resource ID (raw UUID, no newline)")
 	pf.BoolVar(&flagNoUpdateCheck, "no-update-check", false, "Disable startup update check")
 	rootCmd.MarkFlagsMutuallyExclusive("field", "fields")
+	rootCmd.MarkFlagsMutuallyExclusive("id-only", "output")
+	rootCmd.MarkFlagsMutuallyExclusive("id-only", "field")
+	rootCmd.MarkFlagsMutuallyExclusive("id-only", "fields")
 }
 
 // Execute runs the root command and returns an exit code.
@@ -137,6 +142,7 @@ func registerDynamicCommands() {
 		FlagQuiet:        &flagQuiet,
 		FlagStrict:       &flagStrict,
 		FlagNoResolve:    &flagNoResolve,
+		FlagIDOnly:       &flagIDOnly,
 		Profile:          profile,
 		BaseURL:          docsURL,
 	}

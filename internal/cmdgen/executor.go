@@ -50,6 +50,7 @@ type Deps struct {
 	FlagQuiet        *bool
 	FlagStrict       *bool
 	FlagNoResolve    *bool
+	FlagIDOnly       *bool
 	Profile          string
 	BaseURL          string
 }
@@ -72,6 +73,10 @@ func IsStrict(deps *Deps) bool {
 // IsNoResolve returns true when the no-resolve flag is set. Nil-safe.
 func IsNoResolve(deps *Deps) bool {
 	return deps != nil && deps.FlagNoResolve != nil && *deps.FlagNoResolve
+}
+// isIDOnly returns true when the id-only flag is set. Nil-safe.
+func isIDOnly(deps *Deps) bool {
+	return deps != nil && deps.FlagIDOnly != nil && *deps.FlagIDOnly
 }
 
 // Infof writes an informational message to stderr unless quiet mode is active.
@@ -645,6 +650,11 @@ func InjectGlobalBodyParams(body map[string]any, spec *docs.EndpointSpec, worksp
 }
 
 func formatResponse(respBody []byte, deps *Deps) error {
+	// --id-only: extract id and print raw UUID without newline
+	if isIDOnly(deps) {
+		return output.ExtractID(os.Stdout, respBody)
+	}
+
 	// --field: extract a single field, output raw value
 	if deps.FlagField != nil && *deps.FlagField != "" {
 		return output.ExtractField(os.Stdout, respBody, *deps.FlagField)
@@ -962,6 +972,7 @@ func GenerateHelp(w io.Writer, topicName, cmdName string, spec *docs.EndpointSpe
 	fmt.Fprintln(w, "  -n, --dry-run\t\tPrint request details without executing")
 	fmt.Fprintln(w, "      --field\t\tExtract a single field (supports dotted paths)")
 	fmt.Fprintln(w, "      --fields\t\tExtract multiple fields as TSV (comma-separated)")
+	fmt.Fprintln(w, "      --id-only\t\tPrint only the resource ID (raw UUID, no newline)")
 	fmt.Fprintln(w, "  -q, --quiet\t\tSuppress informational stderr messages")
 	fmt.Fprintln(w, "      --strict\t\tTreat name-resolution failures as hard errors")
 	fmt.Fprintln(w, "      --no-resolve\tSkip name-to-UUID resolution")

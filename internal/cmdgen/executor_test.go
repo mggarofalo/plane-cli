@@ -1,10 +1,12 @@
 package cmdgen
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/mggarofalo/plane-cli/internal/api"
@@ -295,6 +297,37 @@ func TestResolveIfNeeded_SequenceID(t *testing.T) {
 		}
 		if result != uuid {
 			t.Errorf("expected %s, got %s", uuid, result)
+		}
+	})
+}
+
+func TestIsIDOnly(t *testing.T) {
+	t.Run("returns false when nil", func(t *testing.T) {
+		deps := &Deps{}
+		if isIDOnly(deps) {
+			t.Error("expected false for nil FlagIDOnly")
+		}
+	})
+
+	t.Run("returns false when false", func(t *testing.T) {
+		f := false
+		deps := &Deps{FlagIDOnly: &f}
+		if isIDOnly(deps) {
+			t.Error("expected false")
+		}
+	})
+
+	t.Run("returns true when true", func(t *testing.T) {
+		f := true
+		deps := &Deps{FlagIDOnly: &f}
+		if !isIDOnly(deps) {
+			t.Error("expected true")
+		}
+	})
+
+	t.Run("returns false when deps is nil", func(t *testing.T) {
+		if isIDOnly(nil) {
+			t.Error("expected false for nil deps")
 		}
 	})
 }
@@ -926,6 +959,126 @@ func TestStrict_POST_FailsOnResolutionError(t *testing.T) {
 	}
 	if _, ok := err.(*ResolutionError); !ok {
 		t.Fatalf("expected *ResolutionError, got %T: %v", err, err)
+	}
+}
+
+func TestIDOnly_POST(t *testing.T) {
+	issueUUID := "550e8400-e29b-41d4-a716-446655440000"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		fmt.Fprintf(w, `{"id": "%s", "name": "Test Issue", "state": "todo"}`, issueUUID)
+	}))
+	defer srv.Close()
+
+	idOnly := true
+	deps := &Deps{
+		NewClient: func() (*api.Client, error) {
+			return api.NewClient(srv.URL, "test-token", "test-ws", false, nil), nil
+		},
+		RequireWorkspace: func(c *api.Client) error { return nil },
+		RequireProject:   func() (string, error) { return "proj-uuid", nil },
+		PaginationParams: func() api.PaginationParams { return api.PaginationParams{PerPage: 100} },
+		Formatter:        func() output.Formatter { return output.New("json") },
+		IsUUID:           func(s string) bool { return len(s) == 36 && s[8] == '-' },
+		FlagIDOnly:       &idOnly,
+	}
+
+	spec := &docs.EndpointSpec{
+		Method:       "POST",
+		PathTemplate: "/api/v1/workspaces/{workspace_slug}/projects/{project_id}/work-items/",
+		EntryTitle:   "Create Work Item",
+		Params: []docs.ParamSpec{
+			{Name: "name", Location: docs.ParamBody, Type: "string"},
+		},
+	}
+
+	parsed := &ParsedArgs{
+		Values: map[string]string{"name": "Test Issue"},
+		Slices: map[string][]string{},
+	}
+
+	// Redirect stdout to capture output
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := ExecuteSpecFromArgs(context.Background(), spec, parsed, deps)
+
+	_ = w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+	got := buf.String()
+
+	if got != issueUUID {
+		t.Errorf("expected %q, got %q", issueUUID, got)
+	}
+
+	// Verify no trailing newline
+	if len(got) > 0 && got[len(got)-1] == '\n' {
+		t.Error("output should not end with a newline")
+	}
+}
+
+func TestIDOnly_GET(t *testing.T) {
+	issueUUID := "660e8400-e29b-41d4-a716-446655440000"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, `{"id": "%s", "name": "Existing Issue", "state": "done"}`, issueUUID)
+	}))
+	defer srv.Close()
+
+	idOnly := true
+	deps := &Deps{
+		NewClient: func() (*api.Client, error) {
+			return api.NewClient(srv.URL, "test-token", "test-ws", false, nil), nil
+		},
+		RequireWorkspace: func(c *api.Client) error { return nil },
+		RequireProject:   func() (string, error) { return "proj-uuid", nil },
+		PaginationParams: func() api.PaginationParams { return api.PaginationParams{PerPage: 100} },
+		Formatter:        func() output.Formatter { return output.New("json") },
+		IsUUID:           func(s string) bool { return len(s) == 36 && s[8] == '-' },
+		FlagIDOnly:       &idOnly,
+	}
+
+	spec := &docs.EndpointSpec{
+		Method:       "GET",
+		PathTemplate: "/api/v1/workspaces/{workspace_slug}/projects/{project_id}/work-items/{work_item_id}/",
+		EntryTitle:   "Get Work Item Detail",
+		Params: []docs.ParamSpec{
+			{Name: "work_item_id", Location: docs.ParamPath, Type: "string", Required: true},
+		},
+	}
+
+	parsed := &ParsedArgs{
+		Values: map[string]string{"work-item-id": issueUUID},
+		Slices: map[string][]string{},
+	}
+
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := ExecuteSpecFromArgs(context.Background(), spec, parsed, deps)
+
+	_ = w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+	got := buf.String()
+
+	if got != issueUUID {
+		t.Errorf("expected %q, got %q", issueUUID, got)
 	}
 }
 
