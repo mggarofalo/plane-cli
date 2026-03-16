@@ -73,5 +73,6 @@ func NewSessionClient(baseURL, sessionCookie, workspace string, verbose bool, de
 			Timeout:   30 * time.Second,
 		},
 		Verbose: verbose,
+		sleepFn: time.Sleep,
 	}
 }

@@ -34,6 +34,7 @@ var (
 	flagFields    string
 	flagIDOnly    bool
 	flagBatch     bool
+	flagRetry     int
 )
 
 var rootCmd = &cobra.Command{
@@ -67,6 +68,7 @@ func init() {
 	pf.StringVar(&flagFields, "fields", "", "Extract multiple fields as TSV (comma-separated, e.g. id,name,state_detail.name)")
 	pf.BoolVar(&flagIDOnly, "id-only", false, "Print only the resource ID (raw UUID, no newline)")
 	pf.BoolVar(&flagBatch, "batch", false, "Read JSONL from stdin; each line is a separate request body (POST/PATCH/PUT only)")
+	pf.IntVar(&flagRetry, "retry", 0, "Max retries on 429 rate limit (0 = no retry, uses exponential backoff)")
 	pf.BoolVar(&flagNoUpdateCheck, "no-update-check", false, "Disable startup update check")
 	rootCmd.MarkFlagsMutuallyExclusive("field", "fields")
 	rootCmd.MarkFlagsMutuallyExclusive("id-only", "output")
@@ -224,7 +226,13 @@ func NewClient() (*api.Client, error) {
 		debugWriter = os.Stderr
 	}
 
-	return api.NewClient(apiURL, resolved.Credential.Token(), workspace, flagVerbose, debugWriter), nil
+	client := api.NewClient(apiURL, resolved.Credential.Token(), workspace, flagVerbose, debugWriter)
+	client.Retry = api.RetryConfig{
+		MaxRetries: flagRetry,
+		Quiet:      flagQuiet,
+		LogWriter:  os.Stderr,
+	}
+	return client, nil
 }
 
 // RequireWorkspace returns the resolved workspace, or an error.
