@@ -179,14 +179,14 @@ func TestBatchMode_MixedSuccessAndFailure(t *testing.T) {
 
 	// Line 1: success
 	var r1 batchResult
-	json.Unmarshal([]byte(lines[0]), &r1)
+	_ = json.Unmarshal([]byte(lines[0]), &r1)
 	if r1.Error != nil {
 		t.Errorf("line 1: expected success, got error: %s", r1.Error.Message)
 	}
 
 	// Line 2: error
 	var r2 batchResult
-	json.Unmarshal([]byte(lines[1]), &r2)
+	_ = json.Unmarshal([]byte(lines[1]), &r2)
 	if r2.Error == nil {
 		t.Error("line 2: expected error, got success")
 	} else if r2.Error.Code != 400 {
@@ -195,7 +195,7 @@ func TestBatchMode_MixedSuccessAndFailure(t *testing.T) {
 
 	// Line 3: success
 	var r3 batchResult
-	json.Unmarshal([]byte(lines[2]), &r3)
+	_ = json.Unmarshal([]byte(lines[2]), &r3)
 	if r3.Error != nil {
 		t.Errorf("line 3: expected success, got error: %s", r3.Error.Message)
 	}
@@ -229,7 +229,7 @@ func TestBatchMode_InvalidJSON(t *testing.T) {
 	}
 
 	var result batchResult
-	json.Unmarshal([]byte(lines[0]), &result)
+	_ = json.Unmarshal([]byte(lines[0]), &result)
 	if result.Error == nil {
 		t.Fatal("expected error result")
 	}
@@ -433,7 +433,7 @@ func TestBatchMode_UnresolvedPathParams(t *testing.T) {
 func TestBatchMode_InjectsGlobalBodyParams(t *testing.T) {
 	var receivedBody map[string]any
 	srv, deps, _ := setupBatchTest(func(w http.ResponseWriter, r *http.Request) {
-		json.NewDecoder(r.Body).Decode(&receivedBody)
+		_ = json.NewDecoder(r.Body).Decode(&receivedBody)
 		w.WriteHeader(http.StatusCreated)
 		fmt.Fprint(w, `{"id": "uuid-1"}`)
 	})
@@ -568,21 +568,21 @@ func TestBatchMode_DoesNotAbortOnError(t *testing.T) {
 
 	// Line 1: success
 	var r1 batchResult
-	json.Unmarshal([]byte(lines[0]), &r1)
+	_ = json.Unmarshal([]byte(lines[0]), &r1)
 	if r1.Error != nil {
 		t.Errorf("line 1: expected success")
 	}
 
 	// Line 2: error
 	var r2 batchResult
-	json.Unmarshal([]byte(lines[1]), &r2)
+	_ = json.Unmarshal([]byte(lines[1]), &r2)
 	if r2.Error == nil {
 		t.Error("line 2: expected error")
 	}
 
 	// Line 3: success (proving batch was not aborted)
 	var r3 batchResult
-	json.Unmarshal([]byte(lines[2]), &r3)
+	_ = json.Unmarshal([]byte(lines[2]), &r3)
 	if r3.Error != nil {
 		t.Errorf("line 3: expected success (batch should not abort on error)")
 	}
