@@ -55,13 +55,21 @@ func TestExtractNames_PlainArray(t *testing.T) {
 func TestExtractNames_EmptyResults(t *testing.T) {
 	response := `{"results": []}`
 
-	// Paginated with empty results returns nil names (no error from fallthrough)
 	names, err := extractNames([]byte(response))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(names) != 0 {
 		t.Errorf("expected empty names, got %v", names)
+	}
+
+	// Verify JSON serialization produces [] not null (BUG-001 fix)
+	data, err := json.Marshal(names)
+	if err != nil {
+		t.Fatalf("unexpected marshal error: %v", err)
+	}
+	if string(data) != "[]" {
+		t.Errorf("expected JSON [], got %s", string(data))
 	}
 }
 

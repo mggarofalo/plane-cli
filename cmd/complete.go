@@ -128,8 +128,9 @@ func extractNames(respBody []byte) ([]string, error) {
 }
 
 // namesFromItems extracts the "name" field from each JSON object.
+// Always returns a non-nil slice so json.Marshal produces [] not null.
 func namesFromItems(items []json.RawMessage) ([]string, error) {
-	var names []string
+	names := make([]string, 0, len(items))
 	for _, raw := range items {
 		var obj map[string]any
 		if err := json.Unmarshal(raw, &obj); err != nil {
