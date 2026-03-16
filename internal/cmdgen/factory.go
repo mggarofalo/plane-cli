@@ -74,6 +74,7 @@ var globalFlagNames = map[string]bool{
 	"dry-run": true, "help": true,
 	"field": true, "fields": true,
 	"id-only": true,
+	"batch":   true,
 }
 
 // BuildEndpointCommand creates a fully-flagged command from a cached spec (Mode A).
@@ -286,6 +287,9 @@ func applyGlobalFlags(cmd *cobra.Command, parsed *ParsedArgs) {
 	}
 	if v := parsed.Get("id-only"); v == "true" || v == "1" {
 		pf.Set("id-only", "true")
+	}
+	if v := parsed.Get("batch"); v == "true" || v == "1" {
+		pf.Set("batch", "true")
 	}
 }
 

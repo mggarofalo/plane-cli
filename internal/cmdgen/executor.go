@@ -52,6 +52,7 @@ type Deps struct {
 	FlagStrict       *bool
 	FlagNoResolve    *bool
 	FlagIDOnly       *bool
+	FlagBatch        *bool
 	Profile          string
 	BaseURL          string
 }
@@ -146,6 +147,11 @@ func printDryRun(method, reqURL string, body map[string]any, relations map[strin
 
 // ExecuteSpec runs an API call based on the endpoint spec and cobra flags.
 func ExecuteSpec(ctx context.Context, cmd *cobra.Command, spec *docs.EndpointSpec, deps *Deps) error {
+	// Batch mode: read JSONL from stdin instead of using flags
+	if isBatch(deps) {
+		return ExecuteBatch(ctx, spec, deps)
+	}
+
 	client, err := deps.NewClient()
 	if err != nil {
 		return err
@@ -260,6 +266,11 @@ func ExecuteSpec(ctx context.Context, cmd *cobra.Command, spec *docs.EndpointSpe
 
 // ExecuteSpecFromArgs runs an API call using manually parsed args (Mode B).
 func ExecuteSpecFromArgs(ctx context.Context, spec *docs.EndpointSpec, parsed *ParsedArgs, deps *Deps) error {
+	// Batch mode: read JSONL from stdin instead of using parsed args
+	if isBatch(deps) {
+		return ExecuteBatch(ctx, spec, deps)
+	}
+
 	client, err := deps.NewClient()
 	if err != nil {
 		return err
@@ -983,4 +994,5 @@ func GenerateHelp(w io.Writer, topicName, cmdName string, spec *docs.EndpointSpe
 	fmt.Fprintln(w, "  -q, --quiet\t\tSuppress informational stderr messages")
 	fmt.Fprintln(w, "      --strict\t\tTreat name-resolution failures as hard errors")
 	fmt.Fprintln(w, "      --no-resolve\tSkip name-to-UUID resolution")
+	fmt.Fprintln(w, "      --batch\t\tRead JSONL from stdin (POST/PATCH/PUT only)")
 }
