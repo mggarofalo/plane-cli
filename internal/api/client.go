@@ -6,11 +6,26 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
+
+// MaxBackoff is the upper bound for exponential backoff wait time.
+const MaxBackoff = 60 * time.Second
+
+// RetryConfig controls automatic retry behaviour for rate-limited requests.
+type RetryConfig struct {
+	// MaxRetries is the maximum number of retry attempts (0 = no retry).
+	MaxRetries int
+	// Quiet suppresses retry log messages to stderr when true.
+	Quiet bool
+	// LogWriter is the destination for retry log messages (typically os.Stderr).
+	LogWriter io.Writer
+}
 
 // Client is the Plane API HTTP client.
 type Client struct {
@@ -18,6 +33,11 @@ type Client struct {
 	Workspace  string
 	HTTPClient *http.Client
 	Verbose    bool
+	Retry      RetryConfig
+
+	// sleepFn is used to wait during retry backoff. Defaults to time.Sleep.
+	// Replaced in tests for deterministic behaviour.
+	sleepFn func(time.Duration)
 }
 
 // NewClient creates a new API client.
@@ -38,6 +58,7 @@ func NewClient(baseURL, token, workspace string, verbose bool, debugWriter io.Wr
 			Timeout:   30 * time.Second,
 		},
 		Verbose: verbose,
+		sleepFn: time.Sleep,
 	}
 }
 
@@ -95,44 +116,131 @@ func (c *Client) GetPaginated(ctx context.Context, rawURL string, params Paginat
 }
 
 func (c *Client) do(ctx context.Context, method, reqURL string, body any) ([]byte, error) {
-	var bodyReader io.Reader
+	// Marshal the body once so it can be replayed on retries.
+	var bodyData []byte
 	if body != nil {
-		data, err := json.Marshal(body)
+		var err error
+		bodyData, err = json.Marshal(body)
 		if err != nil {
 			return nil, fmt.Errorf("marshaling request body: %w", err)
 		}
-		bodyReader = bytes.NewReader(data)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, reqURL, bodyReader)
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
+	maxAttempts := 1 + c.Retry.MaxRetries
+	if maxAttempts < 1 {
+		maxAttempts = 1
 	}
 
-	resp, err := c.HTTPClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("executing request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading response: %w", err)
+	sleep := c.sleepFn
+	if sleep == nil {
+		sleep = time.Sleep
 	}
 
-	if resp.StatusCode >= 400 {
-		return nil, &APIError{
+	var lastErr error
+	for attempt := range maxAttempts {
+		var bodyReader io.Reader
+		if bodyData != nil {
+			bodyReader = bytes.NewReader(bodyData)
+		}
+
+		req, err := http.NewRequestWithContext(ctx, method, reqURL, bodyReader)
+		if err != nil {
+			return nil, fmt.Errorf("creating request: %w", err)
+		}
+
+		resp, err := c.HTTPClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("executing request: %w", err)
+		}
+
+		respBody, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("reading response: %w", err)
+		}
+
+		// Not rate-limited — return normally.
+		if resp.StatusCode != http.StatusTooManyRequests {
+			if resp.StatusCode >= 400 {
+				return nil, &APIError{
+					StatusCode: resp.StatusCode,
+					Status:     resp.Status,
+					Body:       string(respBody),
+					URL:        reqURL,
+				}
+			}
+			if resp.StatusCode == http.StatusNoContent {
+				return nil, nil
+			}
+			return respBody, nil
+		}
+
+		// 429 Too Many Requests — retry if attempts remain.
+		lastErr = &APIError{
 			StatusCode: resp.StatusCode,
 			Status:     resp.Status,
 			Body:       string(respBody),
 			URL:        reqURL,
 		}
+
+		if attempt >= maxAttempts-1 {
+			// No more retries; fall through to return lastErr.
+			break
+		}
+
+		wait := retryDelay(resp.Header, attempt)
+
+		if !c.Retry.Quiet && c.Retry.LogWriter != nil {
+			fmt.Fprintf(c.Retry.LogWriter,
+				"Rate limited (429). Retry %d/%d in %s...\n",
+				attempt+1, c.Retry.MaxRetries, wait.Round(time.Millisecond))
+		}
+
+		// Check for context cancellation before sleeping.
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
+		sleep(wait)
+
+		// Check again after sleeping in case context was cancelled.
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 	}
 
-	// 204 No Content
-	if resp.StatusCode == http.StatusNoContent {
-		return nil, nil
-	}
+	return nil, lastErr
+}
 
-	return respBody, nil
+// retryDelay determines how long to wait before the next retry attempt.
+// It uses the Retry-After header if present; otherwise falls back to
+// exponential backoff: min(2^attempt seconds, MaxBackoff).
+func retryDelay(header http.Header, attempt int) time.Duration {
+	if ra := header.Get("Retry-After"); ra != "" {
+		// Try parsing as seconds (integer).
+		if secs, err := strconv.Atoi(ra); err == nil && secs > 0 {
+			d := time.Duration(secs) * time.Second
+			if d > MaxBackoff {
+				d = MaxBackoff
+			}
+			return d
+		}
+		// Try parsing as HTTP-date.
+		if t, err := http.ParseTime(ra); err == nil {
+			d := time.Until(t)
+			if d < 0 {
+				d = 0
+			}
+			if d > MaxBackoff {
+				d = MaxBackoff
+			}
+			return d
+		}
+	}
+	// Exponential backoff: 1s, 2s, 4s, 8s, ... capped at MaxBackoff.
+	d := time.Duration(math.Pow(2, float64(attempt))) * time.Second
+	if d > MaxBackoff {
+		d = MaxBackoff
+	}
+	return d
 }
