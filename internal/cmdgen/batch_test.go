@@ -54,8 +54,8 @@ func withStdin(input string, fn func()) {
 	r, w, _ := os.Pipe()
 	os.Stdin = r
 	go func() {
-		io.WriteString(w, input)
-		w.Close()
+		_, _ = io.WriteString(w, input)
+		_ = w.Close()
 	}()
 	defer func() { os.Stdin = oldStdin }()
 	fn()
@@ -69,11 +69,11 @@ func captureStdout(fn func()) string {
 
 	fn()
 
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	return buf.String()
 }
 
@@ -82,7 +82,7 @@ func TestBatchMode_AllSucceed(t *testing.T) {
 	srv, deps, spec := setupBatchTest(func(w http.ResponseWriter, r *http.Request) {
 		n := atomic.AddInt32(&requestCount, 1)
 		var body map[string]any
-		json.NewDecoder(r.Body).Decode(&body)
+		_ = json.NewDecoder(r.Body).Decode(&body)
 		w.WriteHeader(http.StatusCreated)
 		fmt.Fprintf(w, `{"id": "uuid-%d", "name": %q}`, n, body["name"])
 	})
@@ -131,7 +131,7 @@ func TestBatchMode_AllSucceed(t *testing.T) {
 func TestBatchMode_MixedSuccessAndFailure(t *testing.T) {
 	srv, deps, spec := setupBatchTest(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
-		json.NewDecoder(r.Body).Decode(&body)
+		_ = json.NewDecoder(r.Body).Decode(&body)
 		name, _ := body["name"].(string)
 		if name == "Bad Issue" {
 			w.WriteHeader(http.StatusBadRequest)
