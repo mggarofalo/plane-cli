@@ -259,4 +259,4 @@ Releases are automated via a Claude Code skill and GitHub Actions:
 
 3. **Version injection**: The version is injected at build time via ldflags (see `.goreleaser.yaml`). There is no version file to edit manually.
 
-4. **Skill location**: `~/.claude/skills/release/SKILL.md`
+4. **Skill location**: `.claude/skills/release/SKILL.md` (repo-local)
