@@ -89,6 +89,7 @@ func BuildEndpointCommand(topicName, cmdName string, spec *docs.EndpointSpec, de
 	}
 
 	// Register flags from spec params
+	var hasNameResolvable, hasIssueRef bool
 	for _, p := range spec.Params {
 		if p.Name == "workspace_slug" || p.Name == "project_id" {
 			continue
@@ -100,6 +101,15 @@ func BuildEndpointCommand(topicName, cmdName string, spec *docs.EndpointSpec, de
 		desc := p.Description
 		if desc == "" {
 			desc = p.Name
+		}
+
+		// Append resolution hint to the flag description
+		hint := paramResolutionHint(p.Name)
+		if IsResolvableParam(p.Name) {
+			hasNameResolvable = true
+		}
+		if IsIssueRefParam(p.Name) {
+			hasIssueRef = true
 		}
 
 		// For _html params, register both --description (markdown) and
@@ -116,6 +126,8 @@ func BuildEndpointCommand(topicName, cmdName string, spec *docs.EndpointSpec, de
 			continue
 		}
 
+		desc += hint
+
 		switch p.Type {
 		case "string[]":
 			cmd.Flags().StringSlice(flagName, nil, desc)
@@ -130,6 +142,16 @@ func BuildEndpointCommand(topicName, cmdName string, spec *docs.EndpointSpec, de
 		if p.Required {
 			cmd.MarkFlagRequired(flagName)
 		}
+	}
+
+	// Add a note about name resolution in the Long description when applicable
+	switch {
+	case hasNameResolvable && hasIssueRef:
+		cmd.Long += "\n\nSome flags accept human-readable names or sequence IDs (e.g. PROJ-42). Run 'plane resolution' for details."
+	case hasNameResolvable:
+		cmd.Long += "\n\nSome flags accept human-readable names instead of UUIDs. Run 'plane resolution' for details."
+	case hasIssueRef:
+		cmd.Long += "\n\nSome flags accept sequence IDs (e.g. PROJ-42) in addition to UUIDs. Run 'plane resolution' for details."
 	}
 
 	return cmd

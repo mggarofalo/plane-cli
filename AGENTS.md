@@ -141,9 +141,13 @@ Dynamic table features: title case headers, UUID shortening (first 8 chars), dat
 
 ### Name-to-UUID resolution
 
-Parameters ending in `_id` (plus `state`, `module`, `parent`, `cycle`, `label`) are automatically resolved from human-readable names to UUIDs. Resolution calls the list endpoint for the resource type and matches by `name` or `display_name` (case-insensitive).
+Parameters ending in `_id` (plus `state`, `module`, `parent`, `cycle`, `label`) are automatically resolved from human-readable names to UUIDs. Resolution calls the list endpoint for the resource type and matches by `name` or `display_name` (case-insensitive). Resolvable flags are annotated with `(accepts name or UUID)` in per-command `--help` output.
 
-**Silent fallback:** If resolution fails (name not found, API error), the original string value is passed through without warning. This means typos in names will reach the API as literal strings and produce a 400/422 error.
+Sequence IDs (`IDENTIFIER-N` format, e.g. `PROJ-42`) are supported for work-item reference flags (`--work-item-id`, `--parent`, `--issues`). These flags are annotated with `(accepts UUID or sequence ID, e.g. PROJ-42)` in help output.
+
+Run `plane resolution` for a full reference covering supported entities, matching fields, cache behavior (soft TTL 1h, hard TTL 7d), and the `--strict`/`--no-resolve` control flags.
+
+**Silent fallback:** If resolution fails (name not found, API error), the original string value is passed through with a warning to stderr. This means typos in names will reach the API as literal strings and produce a 400/422 error. Use `--strict` to treat resolution failures as hard errors (exit code 4).
 
 ### Pagination
 
