@@ -472,11 +472,9 @@ func TestBatchMode_SummaryErrorExitCode(t *testing.T) {
 	if err.ExitCode() != api.ExitGeneralError {
 		t.Errorf("expected exit code %d, got %d", api.ExitGeneralError, err.ExitCode())
 	}
-	if !strings.Contains(err.Error(), "5 succeeded") {
-		t.Errorf("expected '5 succeeded' in error message, got: %s", err.Error())
-	}
-	if !strings.Contains(err.Error(), "2 failed") {
-		t.Errorf("expected '2 failed' in error message, got: %s", err.Error())
+	want := "5 succeeded, 2 failed"
+	if err.Error() != want {
+		t.Errorf("expected %q, got %q", want, err.Error())
 	}
 }
 

@@ -72,10 +72,8 @@ func ExecuteBatch(ctx context.Context, spec *docs.EndpointSpec, deps *Deps) erro
 
 	succeeded := 0
 	failed := 0
-	lineNum := 0
 
 	for scanner.Scan() {
-		lineNum++
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
 			continue
@@ -89,11 +87,16 @@ func ExecuteBatch(ctx context.Context, spec *docs.EndpointSpec, deps *Deps) erro
 		}
 
 		// Write one JSON object per line to stdout
-		out, err := json.Marshal(result)
-		if err != nil {
-			// This should never happen, but handle gracefully
-			failed++
-			fmt.Fprintf(os.Stdout, `{"error":{"message":"marshal error: %s"}}%s`, err.Error(), "\n")
+		out, marshalErr := json.Marshal(result)
+		if marshalErr != nil {
+			// This should never happen, but handle gracefully.
+			// Adjust counts: the result was already counted above,
+			// so only fix if it was originally a success.
+			if result.Error == nil {
+				succeeded--
+				failed++
+			}
+			fmt.Fprintf(os.Stdout, `{"error":{"message":"marshal error: %s"}}%s`, marshalErr.Error(), "\n")
 			continue
 		}
 		fmt.Fprintf(os.Stdout, "%s\n", out)
@@ -103,12 +106,13 @@ func ExecuteBatch(ctx context.Context, spec *docs.EndpointSpec, deps *Deps) erro
 		return fmt.Errorf("reading stdin: %w", err)
 	}
 
-	// Summary to stderr
-	fmt.Fprintf(os.Stderr, "%d succeeded, %d failed\n", succeeded, failed)
-
+	// Summary to stderr. When failed > 0, the returned batchSummaryError is
+	// also printed by the root command's error handler, so only emit the
+	// summary here for the all-success case (where no error is returned).
 	if failed > 0 {
 		return &batchSummaryError{succeeded: succeeded, failed: failed}
 	}
+	fmt.Fprintf(os.Stderr, "%d succeeded, %d failed\n", succeeded, failed)
 	return nil
 }
 
@@ -180,18 +184,12 @@ type batchSummaryError struct {
 }
 
 func (e *batchSummaryError) Error() string {
-	return fmt.Sprintf("batch completed with errors: %d succeeded, %d failed", e.succeeded, e.failed)
+	return fmt.Sprintf("%d succeeded, %d failed", e.succeeded, e.failed)
 }
 
 // ExitCode returns exit code 1 for partial batch failures.
 func (e *batchSummaryError) ExitCode() int {
 	return api.ExitGeneralError
-}
-
-// ExecuteBatchFromStdin is a convenience wrapper used by Mode B (lazy) commands.
-// It wraps ExecuteBatch after resolving the spec.
-func ExecuteBatchFromStdin(ctx context.Context, spec *docs.EndpointSpec, deps *Deps) error {
-	return ExecuteBatch(ctx, spec, deps)
 }
 
 // IsBatchCompatibleMethod returns true if the HTTP method supports batch mode.
