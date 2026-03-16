@@ -62,7 +62,7 @@ func ParseRawArgs(args []string, params []docs.ParamSpec) (*ParsedArgs, error) {
 		"verbose": true, "per-page": true,
 		"cursor": true, "all": true,
 		"dry-run": true, "n": true,
-		"strict": true,
+		"strict": true, "stdin": true,
 		"field": true, "fields": true,
 		"id-only": true,
 		"batch":   true,

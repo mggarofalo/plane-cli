@@ -186,6 +186,20 @@ func executeEnsure(ctx context.Context, cmd *cobra.Command, topicName string, sp
 
 	// Collect body params from the create spec
 	body := collectEnsureBodyParams(cmd, specs.create, deps)
+
+	// Merge stdin JSON if --stdin flag is set
+	if isStdin(deps) {
+		stdinBody, stdinErr := ReadStdinJSON()
+		if stdinErr != nil {
+			return stdinErr
+		}
+		stdinKeys := StdinKeys(stdinBody, body)
+		body = MergeStdinWithFlags(stdinBody, body)
+		if resolveErr := ResolveStdinBody(ctx, body, stdinKeys, deps); resolveErr != nil {
+			return resolveErr
+		}
+	}
+
 	body = InjectGlobalBodyParams(body, specs.create, client.Workspace, projectID)
 
 	// Ensure body is non-nil before field lookups

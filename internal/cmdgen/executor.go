@@ -53,6 +53,7 @@ type Deps struct {
 	FlagNoResolve    *bool
 	FlagIDOnly       *bool
 	FlagBatch        *bool
+	FlagStdin        *bool
 	Profile          string
 	BaseURL          string
 }
@@ -182,6 +183,22 @@ func ExecuteSpec(ctx context.Context, cmd *cobra.Command, spec *docs.EndpointSpe
 	if err != nil {
 		return err
 	}
+
+	// Merge stdin JSON if --stdin flag is set (for POST/PATCH/PUT only)
+	if isStdin(deps) && spec.Method != "GET" && spec.Method != "DELETE" {
+		stdinBody, stdinErr := ReadStdinJSON()
+		if stdinErr != nil {
+			return stdinErr
+		}
+		// Track which keys came from stdin (not overridden by flags) for resolution
+		stdinKeys := StdinKeys(stdinBody, body)
+		body = MergeStdinWithFlags(stdinBody, body)
+		// Apply name resolution to stdin-originated fields
+		if resolveErr := ResolveStdinBody(ctx, body, stdinKeys, deps); resolveErr != nil {
+			return resolveErr
+		}
+	}
+
 	// Inject global path params (project_id, workspace_slug) when spec has them as body params
 	body = InjectGlobalBodyParams(body, spec, client.Workspace, projectID)
 
@@ -301,6 +318,22 @@ func ExecuteSpecFromArgs(ctx context.Context, spec *docs.EndpointSpec, parsed *P
 	if err != nil {
 		return err
 	}
+
+	// Merge stdin JSON if --stdin flag is set (for POST/PATCH/PUT only)
+	if isStdin(deps) && spec.Method != "GET" && spec.Method != "DELETE" {
+		stdinBody, stdinErr := ReadStdinJSON()
+		if stdinErr != nil {
+			return stdinErr
+		}
+		// Track which keys came from stdin (not overridden by flags) for resolution
+		stdinKeys := StdinKeys(stdinBody, body)
+		body = MergeStdinWithFlags(stdinBody, body)
+		// Apply name resolution to stdin-originated fields
+		if resolveErr := ResolveStdinBody(ctx, body, stdinKeys, deps); resolveErr != nil {
+			return resolveErr
+		}
+	}
+
 	body = InjectGlobalBodyParams(body, spec, client.Workspace, projectID)
 
 	// Snapshot body before relation extraction mutates it (for dry-run output)
@@ -988,6 +1021,7 @@ func GenerateHelp(w io.Writer, topicName, cmdName string, spec *docs.EndpointSpe
 	fmt.Fprintln(w, "  -o, --output\t\tOutput format: json, table")
 	fmt.Fprintln(w, "      --all\t\tAuto-paginate and return all results")
 	fmt.Fprintln(w, "  -n, --dry-run\t\tPrint request details without executing")
+	fmt.Fprintln(w, "      --stdin\t\tRead JSON body from stdin (POST/PATCH/PUT)")
 	fmt.Fprintln(w, "      --field\t\tExtract a single field (supports dotted paths)")
 	fmt.Fprintln(w, "      --fields\t\tExtract multiple fields as TSV (comma-separated)")
 	fmt.Fprintln(w, "      --id-only\t\tPrint only the resource ID (raw UUID, no newline)")
