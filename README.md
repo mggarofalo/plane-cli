@@ -6,19 +6,6 @@ Commands are dynamically generated from the Plane API documentation, so the CLI 
 
 ## Install
 
-### Homebrew (macOS / Linux)
-
-```bash
-brew install mggarofalo/tap/plane
-```
-
-### Scoop (Windows)
-
-```powershell
-scoop bucket add mggarofalo https://github.com/mggarofalo/scoop-bucket
-scoop install plane
-```
-
 ### Go install
 
 ```bash

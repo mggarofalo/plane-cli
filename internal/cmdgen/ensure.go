@@ -536,7 +536,7 @@ func collectEnsureBodyParams(cmd *cobra.Command, createSpec *docs.EndpointSpec, 
 			val, _ := cmd.Flags().GetStringSlice(flagName)
 			if len(val) > 0 {
 				if issueRefParams[p.Name] {
-					val = resolveSliceIfNeeded(cmd.Context(), val, p.Name, deps)
+					val, _ = resolveSliceIfNeeded(cmd.Context(), val, p.Name, deps)
 				}
 				body[p.Name] = val
 			}
@@ -549,7 +549,7 @@ func collectEnsureBodyParams(cmd *cobra.Command, createSpec *docs.EndpointSpec, 
 		default:
 			val, _ := cmd.Flags().GetString(flagName)
 			if val != "" {
-				val = resolveIfNeeded(cmd.Context(), val, p.Name, nil, "", deps)
+				val, _ = resolveIfNeeded(cmd.Context(), val, p.Name, nil, "", deps)
 				body[p.Name] = val
 			}
 		}
