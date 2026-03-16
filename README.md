@@ -6,6 +6,32 @@ Commands are dynamically generated from the Plane API documentation, so the CLI 
 
 ## Install
 
+### Quick install (recommended)
+
+**Linux / macOS:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mggarofalo/plane-cli/main/install.sh | sh
+```
+
+**Windows (PowerShell):**
+
+```powershell
+irm https://raw.githubusercontent.com/mggarofalo/plane-cli/main/install.ps1 | iex
+```
+
+To also configure the [MCP server](#mcp-server) for Claude Code, add the `--with-mcp` flag:
+
+```bash
+# Linux / macOS
+curl -fsSL https://raw.githubusercontent.com/mggarofalo/plane-cli/main/install.sh | sh -s -- --with-mcp
+
+# Windows (PowerShell)
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/mggarofalo/plane-cli/main/install.ps1))) -WithMcp
+```
+
+The install scripts detect your OS and architecture, download the latest release, verify the checksum, and place the binary in your PATH. They are idempotent and safe to re-run for upgrades.
+
 ### Go install
 
 ```bash
@@ -230,6 +256,27 @@ The check is skipped when:
 | 5 | Rate limited | 429 |
 
 Error messages are printed to stderr in the format: `API error {code} ({url}): {body}`
+
+## MCP server
+
+plane-cli includes a built-in [Model Context Protocol](https://modelcontextprotocol.io/) server that lets AI agents (such as Claude Code) call Plane API endpoints as tools.
+
+To configure it automatically during installation, use the `--with-mcp` flag (see [Quick install](#quick-install-recommended)).
+
+To configure it manually, add this to `~/.claude/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "plane": {
+      "command": "plane",
+      "args": ["mcp", "--quiet"]
+    }
+  }
+}
+```
+
+Then run `plane docs update-specs` to pre-cache the API specs. Restart Claude Code to activate the server.
 
 ## For automation and AI agents
 
