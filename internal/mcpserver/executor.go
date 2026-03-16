@@ -11,6 +11,7 @@ import (
 	"github.com/mggarofalo/plane-cli/internal/cmdgen"
 	"github.com/mggarofalo/plane-cli/internal/docs"
 	"github.com/mggarofalo/plane-cli/internal/markdown"
+	"github.com/mggarofalo/plane-cli/internal/weburl"
 )
 
 // ExecuteEndpoint runs an API call for the given EndpointSpec using the
@@ -94,6 +95,9 @@ func ExecuteEndpoint(ctx context.Context, spec *docs.EndpointSpec, args map[stri
 	if len(respBody) == 0 {
 		return []byte(`{}`), nil
 	}
+
+	// Inject web_url for single-resource responses
+	respBody = weburl.Inject(respBody, client.BaseURL, workspace, projectID, spec.PathTemplate)
 
 	return respBody, nil
 }

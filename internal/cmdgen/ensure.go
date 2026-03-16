@@ -10,6 +10,7 @@ import (
 	"github.com/mggarofalo/plane-cli/internal/api"
 	"github.com/mggarofalo/plane-cli/internal/docs"
 	"github.com/mggarofalo/plane-cli/internal/markdown"
+	"github.com/mggarofalo/plane-cli/internal/weburl"
 	"github.com/spf13/cobra"
 )
 
@@ -380,6 +381,9 @@ func executeEnsureCreate(ctx context.Context, _ *cobra.Command, client *api.Clie
 		return nil
 	}
 
+	// Inject web_url for the newly created resource
+	respBody = weburl.Inject(respBody, client.BaseURL, client.Workspace, projectID, specs.create.PathTemplate)
+
 	if err := formatResponse(respBody, deps); err != nil {
 		return err
 	}
@@ -428,6 +432,9 @@ func executeEnsureUpdate(ctx context.Context, _ *cobra.Command, client *api.Clie
 		return nil
 	}
 
+	// Inject web_url for the updated resource
+	respBody = weburl.Inject(respBody, client.BaseURL, client.Workspace, projectID, specs.update.PathTemplate)
+
 	return formatResponse(respBody, deps)
 }
 
@@ -450,6 +457,10 @@ func ensureGetExisting(ctx context.Context, client *api.Client, listSpec *docs.E
 	if len(respBody) == 0 {
 		return nil
 	}
+
+	// Build a detail path template from the list path for web_url injection
+	detailTemplate := strings.TrimRight(listSpec.PathTemplate, "/") + "/{resource_id}/"
+	respBody = weburl.Inject(respBody, client.BaseURL, client.Workspace, projectID, detailTemplate)
 
 	return formatResponse(respBody, deps)
 }

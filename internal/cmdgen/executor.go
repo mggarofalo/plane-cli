@@ -13,6 +13,7 @@ import (
 	"github.com/mggarofalo/plane-cli/internal/docs"
 	"github.com/mggarofalo/plane-cli/internal/markdown"
 	"github.com/mggarofalo/plane-cli/internal/output"
+	"github.com/mggarofalo/plane-cli/internal/weburl"
 	"github.com/spf13/cobra"
 )
 
@@ -241,6 +242,9 @@ func ExecuteSpec(ctx context.Context, cmd *cobra.Command, spec *docs.EndpointSpe
 		return nil
 	}
 
+	// Inject web_url for single-resource responses
+	respBody = weburl.Inject(respBody, client.BaseURL, client.Workspace, projectID, spec.PathTemplate)
+
 	// Always show the created resource, even if post-creation attach fails.
 	if err := formatResponse(respBody, deps); err != nil {
 		return err
@@ -347,6 +351,9 @@ func ExecuteSpecFromArgs(ctx context.Context, spec *docs.EndpointSpec, parsed *P
 	if len(respBody) == 0 {
 		return nil
 	}
+
+	// Inject web_url for single-resource responses
+	respBody = weburl.Inject(respBody, client.BaseURL, client.Workspace, projectID, spec.PathTemplate)
 
 	// Always show the created resource, even if post-creation attach fails.
 	if err := formatResponse(respBody, deps); err != nil {
