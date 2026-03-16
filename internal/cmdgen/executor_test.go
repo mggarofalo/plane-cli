@@ -1004,7 +1004,7 @@ func TestIDOnly_POST(t *testing.T) {
 
 	err := ExecuteSpecFromArgs(context.Background(), spec, parsed, deps)
 
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	if err != nil {
@@ -1012,7 +1012,7 @@ func TestIDOnly_POST(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	got := buf.String()
 
 	if got != issueUUID {
@@ -1066,7 +1066,7 @@ func TestIDOnly_GET(t *testing.T) {
 
 	err := ExecuteSpecFromArgs(context.Background(), spec, parsed, deps)
 
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 
 	if err != nil {
@@ -1074,7 +1074,7 @@ func TestIDOnly_GET(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	_, _ = buf.ReadFrom(r)
 	got := buf.String()
 
 	if got != issueUUID {
