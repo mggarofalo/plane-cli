@@ -25,6 +25,7 @@ var (
 	flagVerbose   bool
 	flagQuiet     bool
 	flagStrict    bool
+	flagStdin     bool
 	flagPerPage   int
 	flagCursor    string
 	flagAll       bool
@@ -58,6 +59,7 @@ func init() {
 	pf.BoolVar(&flagVerbose, "verbose", false, "Debug HTTP logging (tokens redacted)")
 	pf.BoolVarP(&flagQuiet, "quiet", "q", false, "Suppress informational stderr messages")
 	pf.BoolVar(&flagStrict, "strict", false, "Treat name-resolution failures as hard errors (exit 4)")
+	pf.BoolVar(&flagStdin, "stdin", false, "Read JSON body from stdin (for POST/PATCH/PUT); merges with flags")
 	pf.IntVar(&flagPerPage, "per-page", 100, "Items per page (max 100)")
 	pf.StringVar(&flagCursor, "cursor", "", "Pagination cursor")
 	pf.BoolVar(&flagAll, "all", false, "Auto-paginate and return all results")
@@ -76,6 +78,7 @@ func init() {
 	rootCmd.MarkFlagsMutuallyExclusive("batch", "field")
 	rootCmd.MarkFlagsMutuallyExclusive("batch", "fields")
 	rootCmd.MarkFlagsMutuallyExclusive("batch", "id-only")
+	rootCmd.MarkFlagsMutuallyExclusive("batch", "stdin")
 }
 
 // Execute runs the root command and returns an exit code.
@@ -150,6 +153,7 @@ func registerDynamicCommands() {
 		FlagNoResolve:    &flagNoResolve,
 		FlagIDOnly:       &flagIDOnly,
 		FlagBatch:        &flagBatch,
+		FlagStdin:        &flagStdin,
 		Profile:          profile,
 		BaseURL:          docsURL,
 	}
