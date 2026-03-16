@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/mggarofalo/plane-cli/internal/api"
+	"github.com/mggarofalo/plane-cli/internal/cache"
 )
 
 // sequenceIDRe matches identifiers like "PROJ-123" or "RECEIPTS-351".
@@ -51,6 +53,8 @@ func ResolveSequenceID(ctx context.Context, sequenceID string, deps *Deps) (stri
 
 // ResolveNameToUUID resolves a human-readable name to a UUID by finding the
 // corresponding resource's list endpoint and searching for a match.
+// When a cache store is available, it checks disk cache first and populates
+// the cache after a successful API lookup.
 func ResolveNameToUUID(ctx context.Context, name, paramName string, deps *Deps) (string, error) {
 	// Extract resource name from param: e.g., "state_id" → "state"
 	resourceName := strings.TrimSuffix(paramName, "_id")
@@ -68,7 +72,26 @@ func ResolveNameToUUID(ctx context.Context, name, paramName string, deps *Deps) 
 		projectID, _ = deps.RequireProject()
 	}
 
-	// Try to find the list endpoint for this resource
+	// Determine cache kind for this parameter
+	kind := cache.ResourceKindFromParam(paramName)
+
+	// --- Cache check ---
+	if kind != "" && deps.CacheStore != nil {
+		cached, _ := deps.CacheStore.Load(client.Workspace, projectID, kind)
+		if cached != nil && !cached.IsExpired() {
+			if id := cached.FindByName(name); id != "" {
+				// Stale but valid: trigger background refresh
+				if cached.IsStale() {
+					fetch := cache.BuildFetchFunc(client, kind, projectID)
+					cache.RefreshInBackground(deps.CacheStore, client.Workspace, projectID, kind, fetch)
+				}
+				return id, nil
+			}
+			// Name not found in cache — fall through to API
+		}
+	}
+
+	// --- API lookup (existing behavior) ---
 	listURL := buildListURL(client, resourceName, projectID)
 	if listURL == "" {
 		return "", fmt.Errorf("cannot resolve %q: no list endpoint known for %q", name, resourceName)
@@ -77,6 +100,17 @@ func ResolveNameToUUID(ctx context.Context, name, paramName string, deps *Deps) 
 	respBody, err := client.Get(ctx, listURL)
 	if err != nil {
 		return "", fmt.Errorf("resolving %q for %s: %w", name, resourceName, err)
+	}
+
+	// --- Populate cache after successful API response ---
+	if kind != "" && deps.CacheStore != nil {
+		if entries, parseErr := cache.ParseEntries(respBody); parseErr == nil && entries != nil {
+			cr := &cache.CachedResource{
+				FetchedAt: time.Now(),
+				Entries:   entries,
+			}
+			_ = deps.CacheStore.Save(client.Workspace, projectID, kind, cr)
+		}
 	}
 
 	return findByName(respBody, name)

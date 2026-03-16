@@ -7,6 +7,7 @@ import (
 
 	"github.com/mggarofalo/plane-cli/internal/api"
 	"github.com/mggarofalo/plane-cli/internal/auth"
+	"github.com/mggarofalo/plane-cli/internal/cache"
 	"github.com/mggarofalo/plane-cli/internal/cmdgen"
 	"github.com/mggarofalo/plane-cli/internal/docs"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -15,13 +16,14 @@ import (
 // Config holds the server configuration, analogous to cmdgen.Deps but
 // adapted for MCP server use (no Cobra dependency).
 type Config struct {
-	Workspace string
-	Project   string
-	Profile   string
-	BaseURL   string
-	APIURL    string
-	APIKey    string
-	Quiet     bool
+	Workspace  string
+	Project    string
+	Profile    string
+	BaseURL    string
+	APIURL     string
+	APIKey     string
+	Quiet      bool
+	cacheStore *cache.Store // singleton, shared across all BuildDepsFor calls
 }
 
 // NewClient creates an API client with the given workspace override.
@@ -82,7 +84,8 @@ func (c *Config) BuildDepsFor(workspace, project string) *cmdgen.Deps {
 			}
 			return project, nil
 		},
-		IsUUID: func(s string) bool { return isUUID(s) },
+		IsUUID:     func(s string) bool { return isUUID(s) },
+		CacheStore: c.cacheStore,
 	}
 }
 
@@ -113,6 +116,7 @@ func Run(ctx context.Context, cfg *Config) error {
 		profile = cfg.Profile
 	}
 	cfg.Profile = profile
+	cfg.cacheStore = cache.NewStore(profile)
 
 	// Resolve workspace from config if not provided
 	if cfg.Workspace == "" {

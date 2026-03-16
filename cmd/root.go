@@ -9,6 +9,7 @@ import (
 
 	"github.com/mggarofalo/plane-cli/internal/api"
 	"github.com/mggarofalo/plane-cli/internal/auth"
+	"github.com/mggarofalo/plane-cli/internal/cache"
 	"github.com/mggarofalo/plane-cli/internal/cmdgen"
 	"github.com/mggarofalo/plane-cli/internal/docs"
 	"github.com/mggarofalo/plane-cli/internal/output"
@@ -145,6 +146,7 @@ func registerDynamicCommands() {
 		PaginationParams: PaginationParams,
 		Formatter:        Formatter,
 		IsUUID:           IsUUID,
+		CacheStore:       cache.NewStore(profile),
 		FlagAll:          &flagAll,
 		FlagPerPage:      &flagPerPage,
 		FlagDryRun:       &flagDryRun,
@@ -178,12 +180,13 @@ func registerDynamicCommands() {
 	}
 }
 
-// waitForPendingUpdates gives background spec refresh goroutines time to finish.
+// waitForPendingUpdates gives background spec refresh and cache refresh goroutines time to finish.
 func waitForPendingUpdates(timeout time.Duration) {
 	timer := time.After(timeout)
 	done := make(chan struct{})
 	go func() {
 		cmdgen.PendingUpdates.Wait()
+		cache.PendingRefreshes.Wait()
 		close(done)
 	}()
 	select {
