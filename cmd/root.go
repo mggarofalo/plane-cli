@@ -29,6 +29,7 @@ var (
 	flagCursor    string
 	flagAll       bool
 	flagDryRun    bool
+	flagNoResolve bool
 	flagField     string
 	flagFields    string
 )
@@ -59,6 +60,7 @@ func init() {
 	pf.StringVar(&flagCursor, "cursor", "", "Pagination cursor")
 	pf.BoolVar(&flagAll, "all", false, "Auto-paginate and return all results")
 	pf.BoolVarP(&flagDryRun, "dry-run", "n", false, "Print request details without executing")
+	pf.BoolVar(&flagNoResolve, "no-resolve", false, "Skip name-to-UUID resolution; pass all values as literal strings")
 	pf.StringVar(&flagField, "field", "", "Extract a single field from JSON response (supports dotted paths, e.g. state_detail.name)")
 	pf.StringVar(&flagFields, "fields", "", "Extract multiple fields as TSV (comma-separated, e.g. id,name,state_detail.name)")
 	pf.BoolVar(&flagNoUpdateCheck, "no-update-check", false, "Disable startup update check")
@@ -134,6 +136,7 @@ func registerDynamicCommands() {
 		FlagFields:       &flagFields,
 		FlagQuiet:        &flagQuiet,
 		FlagStrict:       &flagStrict,
+		FlagNoResolve:    &flagNoResolve,
 		Profile:          profile,
 		BaseURL:          docsURL,
 	}
@@ -222,10 +225,14 @@ func RequireWorkspace(client *api.Client) error {
 
 // RequireProject returns the project UUID. If --project is a short identifier
 // (e.g. "PLANECLI"), it resolves it to a UUID via the API.
+// When --no-resolve is active, the literal value is returned without resolution.
 // Exported for use by cmdgen package.
 func RequireProject() (string, error) {
 	if flagProject == "" {
 		return "", fmt.Errorf("project is required. Use --project flag")
+	}
+	if flagNoResolve {
+		return flagProject, nil
 	}
 	if len(flagProject) == 36 && strings.Count(flagProject, "-") == 4 {
 		return flagProject, nil

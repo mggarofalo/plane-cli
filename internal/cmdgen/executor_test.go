@@ -936,3 +936,158 @@ func TestExitCodeFromError_ResolutionError(t *testing.T) {
 		t.Errorf("expected exit code %d, got %d", api.ExitValidation, code)
 	}
 }
+
+func TestIsNoResolve(t *testing.T) {
+	t.Run("returns false when deps is nil", func(t *testing.T) {
+		if IsNoResolve(nil) {
+			t.Error("expected false for nil deps")
+		}
+	})
+
+	t.Run("returns false when FlagNoResolve is nil", func(t *testing.T) {
+		deps := &Deps{}
+		if IsNoResolve(deps) {
+			t.Error("expected false for nil FlagNoResolve")
+		}
+	})
+
+	t.Run("returns false when false", func(t *testing.T) {
+		f := false
+		deps := &Deps{FlagNoResolve: &f}
+		if IsNoResolve(deps) {
+			t.Error("expected false")
+		}
+	})
+
+	t.Run("returns true when true", func(t *testing.T) {
+		f := true
+		deps := &Deps{FlagNoResolve: &f}
+		if !IsNoResolve(deps) {
+			t.Error("expected true")
+		}
+	})
+}
+
+func TestResolveIfNeeded_NoResolve(t *testing.T) {
+	// Server should never be called when --no-resolve is active
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("HTTP request should not be made when --no-resolve is active")
+	}))
+	defer srv.Close()
+
+	noResolve := true
+	isUUID := func(s string) bool { return len(s) == 36 && s[8] == '-' }
+	deps := &Deps{
+		NewClient: func() (*api.Client, error) {
+			return api.NewClient(srv.URL, "test-token", "test-ws", false, nil), nil
+		},
+		RequireWorkspace: func(c *api.Client) error { return nil },
+		IsUUID:           isUUID,
+		FlagNoResolve:    &noResolve,
+	}
+
+	t.Run("passes through non-UUID for _id param", func(t *testing.T) {
+		result, err := resolveIfNeeded(context.Background(), "my-state-name", "state_id", nil, "", deps)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result != "my-state-name" {
+			t.Errorf("expected literal value, got %q", result)
+		}
+	})
+
+	t.Run("passes through sequence ID without resolving", func(t *testing.T) {
+		result, err := resolveIfNeeded(context.Background(), "PROJ-42", "work_item_id", nil, "", deps)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result != "PROJ-42" {
+			t.Errorf("expected PROJ-42, got %q", result)
+		}
+	})
+
+	t.Run("passes through resolvable param name", func(t *testing.T) {
+		result, err := resolveIfNeeded(context.Background(), "In Progress", "state", nil, "", deps)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result != "In Progress" {
+			t.Errorf("expected literal value, got %q", result)
+		}
+	})
+}
+
+func TestResolveSliceIfNeeded_NoResolve(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("HTTP request should not be made when --no-resolve is active")
+	}))
+	defer srv.Close()
+
+	noResolve := true
+	isUUID := func(s string) bool { return len(s) == 36 && s[8] == '-' }
+	deps := &Deps{
+		NewClient: func() (*api.Client, error) {
+			return api.NewClient(srv.URL, "test-token", "test-ws", false, nil), nil
+		},
+		RequireWorkspace: func(c *api.Client) error { return nil },
+		IsUUID:           isUUID,
+		FlagNoResolve:    &noResolve,
+	}
+
+	t.Run("passes through sequence IDs without resolving", func(t *testing.T) {
+		input := []string{"PROJ-1", "PROJ-2"}
+		result, err := resolveSliceIfNeeded(context.Background(), input, "issues", deps)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result[0] != "PROJ-1" || result[1] != "PROJ-2" {
+			t.Errorf("expected literal values, got %v", result)
+		}
+	})
+}
+
+func TestNoResolve_POST_SkipsResolution(t *testing.T) {
+	requestReceived := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestReceived = true
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, `{"id": "new-uuid", "name": "Test"}`)
+	}))
+	defer srv.Close()
+
+	noResolve := true
+	deps := &Deps{
+		NewClient: func() (*api.Client, error) {
+			return api.NewClient(srv.URL, "test-token", "test-ws", false, nil), nil
+		},
+		RequireWorkspace: func(c *api.Client) error { return nil },
+		RequireProject:   func() (string, error) { return "proj-uuid", nil },
+		PaginationParams: func() api.PaginationParams { return api.PaginationParams{PerPage: 100} },
+		Formatter:        func() output.Formatter { return output.New("json") },
+		IsUUID:           func(s string) bool { return len(s) == 36 && s[8] == '-' },
+		FlagNoResolve:    &noResolve,
+	}
+
+	spec := &docs.EndpointSpec{
+		Method:       "POST",
+		PathTemplate: "/api/v1/workspaces/{workspace_slug}/projects/{project_id}/work-items/",
+		EntryTitle:   "Create Work Item",
+		Params: []docs.ParamSpec{
+			{Name: "name", Location: docs.ParamBody, Type: "string"},
+			{Name: "state", Location: docs.ParamBody, Type: "string"},
+		},
+	}
+
+	parsed := &ParsedArgs{
+		Values: map[string]string{"name": "Test Issue", "state": "In Progress"},
+		Slices: map[string][]string{},
+	}
+
+	err := ExecuteSpecFromArgs(context.Background(), spec, parsed, deps)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !requestReceived {
+		t.Error("expected POST request to be made")
+	}
+}

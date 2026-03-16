@@ -49,6 +49,7 @@ type Deps struct {
 	FlagFields       *string
 	FlagQuiet        *bool
 	FlagStrict       *bool
+	FlagNoResolve    *bool
 	Profile          string
 	BaseURL          string
 }
@@ -66,6 +67,11 @@ func IsQuiet(deps *Deps) bool {
 // IsStrict returns true when the strict flag is set. Nil-safe.
 func IsStrict(deps *Deps) bool {
 	return deps != nil && deps.FlagStrict != nil && *deps.FlagStrict
+}
+
+// IsNoResolve returns true when the no-resolve flag is set. Nil-safe.
+func IsNoResolve(deps *Deps) bool {
+	return deps != nil && deps.FlagNoResolve != nil && *deps.FlagNoResolve
 }
 
 // Infof writes an informational message to stderr unless quiet mode is active.
@@ -751,8 +757,12 @@ var resolvableParams = map[string]string{
 // resolveIfNeeded resolves a value to UUID if the param expects an ID and the
 // value is not a UUID. When resolution fails, it emits a warning to stderr and
 // passes the literal value through. If --strict is active, resolution failure
-// returns a ResolutionError instead.
+// returns a ResolutionError instead. If --no-resolve is active, the value is
+// returned as-is without any resolution attempts.
 func resolveIfNeeded(ctx context.Context, value, paramName string, client *api.Client, projectID string, deps *Deps) (string, error) {
+	if IsNoResolve(deps) {
+		return value, nil
+	}
 	if deps.IsUUID == nil || deps.IsUUID(value) {
 		return value, nil
 	}
@@ -802,7 +812,11 @@ func warnOrFailResolution(value, paramName string, deps *Deps) (string, error) {
 }
 
 // resolveSliceIfNeeded resolves each element in a string slice using resolveIfNeeded.
+// If --no-resolve is active, the original slice is returned as-is.
 func resolveSliceIfNeeded(ctx context.Context, values []string, paramName string, deps *Deps) ([]string, error) {
+	if IsNoResolve(deps) {
+		return values, nil
+	}
 	resolved := make([]string, len(values))
 	for i, v := range values {
 		r, err := resolveIfNeeded(ctx, v, paramName, nil, "", deps)
@@ -950,4 +964,5 @@ func GenerateHelp(w io.Writer, topicName, cmdName string, spec *docs.EndpointSpe
 	fmt.Fprintln(w, "      --fields\t\tExtract multiple fields as TSV (comma-separated)")
 	fmt.Fprintln(w, "  -q, --quiet\t\tSuppress informational stderr messages")
 	fmt.Fprintln(w, "      --strict\t\tTreat name-resolution failures as hard errors")
+	fmt.Fprintln(w, "      --no-resolve\tSkip name-to-UUID resolution")
 }
