@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/mggarofalo/plane-cli/internal/api"
+	"github.com/mggarofalo/plane-cli/internal/cache"
 	"github.com/mggarofalo/plane-cli/internal/docs"
 	"github.com/mggarofalo/plane-cli/internal/markdown"
 	"github.com/mggarofalo/plane-cli/internal/output"
@@ -43,6 +44,7 @@ type Deps struct {
 	PaginationParams PaginationParamsFactory
 	Formatter        FormatterFactory
 	IsUUID           UUIDChecker
+	CacheStore       *cache.Store
 	FlagAll          *bool
 	FlagPerPage      *int
 	FlagDryRun       *bool

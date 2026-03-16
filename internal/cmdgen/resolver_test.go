@@ -7,8 +7,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/mggarofalo/plane-cli/internal/api"
+	"github.com/mggarofalo/plane-cli/internal/cache"
 )
 
 func TestFindByName_PaginatedResponse(t *testing.T) {
@@ -185,4 +187,203 @@ func TestResolveSequenceID(t *testing.T) {
 			t.Fatal("expected error, got nil")
 		}
 	})
+}
+
+func testCacheStore(t *testing.T) *cache.Store {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", dir)
+	return cache.NewStore("test")
+}
+
+func TestResolveNameToUUID_CacheHit(t *testing.T) {
+	apiCalls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		apiCalls++
+		fmt.Fprint(w, `[{"id": "s1", "name": "Done"}]`)
+	}))
+	defer srv.Close()
+
+	store := testCacheStore(t)
+
+	// Pre-populate cache
+	cr := &cache.CachedResource{
+		FetchedAt: time.Now(),
+		Entries: []cache.Entry{
+			{ID: "cached-uuid", Name: "Done"},
+		},
+	}
+	store.Save("test-ws", "proj1", cache.KindStates, cr)
+
+	deps := &Deps{
+		NewClient: func() (*api.Client, error) {
+			return api.NewClient(srv.URL, "tok", "test-ws", false, nil), nil
+		},
+		RequireWorkspace: func(c *api.Client) error { return nil },
+		RequireProject:   func() (string, error) { return "proj1", nil },
+		CacheStore:       store,
+	}
+
+	id, err := ResolveNameToUUID(context.Background(), "Done", "state_id", deps)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if id != "cached-uuid" {
+		t.Errorf("expected cached-uuid, got %s", id)
+	}
+	if apiCalls != 0 {
+		t.Errorf("expected 0 API calls (cache hit), got %d", apiCalls)
+	}
+}
+
+func TestResolveNameToUUID_CacheMiss(t *testing.T) {
+	apiCalls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		apiCalls++
+		fmt.Fprint(w, `[{"id": "api-uuid", "name": "Done"}]`)
+	}))
+	defer srv.Close()
+
+	store := testCacheStore(t)
+
+	deps := &Deps{
+		NewClient: func() (*api.Client, error) {
+			return api.NewClient(srv.URL, "tok", "test-ws", false, nil), nil
+		},
+		RequireWorkspace: func(c *api.Client) error { return nil },
+		RequireProject:   func() (string, error) { return "proj1", nil },
+		CacheStore:       store,
+	}
+
+	id, err := ResolveNameToUUID(context.Background(), "Done", "state_id", deps)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if id != "api-uuid" {
+		t.Errorf("expected api-uuid, got %s", id)
+	}
+	if apiCalls != 1 {
+		t.Errorf("expected 1 API call (cache miss), got %d", apiCalls)
+	}
+
+	// Verify cache was populated
+	loaded, _ := store.Load("test-ws", "proj1", cache.KindStates)
+	if loaded == nil {
+		t.Fatal("expected cache to be populated after API call")
+	}
+	if loaded.FindByName("Done") != "api-uuid" {
+		t.Error("expected populated cache to contain the resolved entry")
+	}
+}
+
+func TestResolveNameToUUID_CacheStale(t *testing.T) {
+	apiCalls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		apiCalls++
+		fmt.Fprint(w, `[{"id": "fresh-uuid", "name": "Done"}]`)
+	}))
+	defer srv.Close()
+
+	store := testCacheStore(t)
+
+	// Pre-populate with stale cache (2 hours old)
+	cr := &cache.CachedResource{
+		FetchedAt: time.Now().Add(-2 * time.Hour),
+		Entries: []cache.Entry{
+			{ID: "stale-uuid", Name: "Done"},
+		},
+	}
+	store.Save("test-ws", "proj1", cache.KindStates, cr)
+
+	deps := &Deps{
+		NewClient: func() (*api.Client, error) {
+			return api.NewClient(srv.URL, "tok", "test-ws", false, nil), nil
+		},
+		RequireWorkspace: func(c *api.Client) error { return nil },
+		RequireProject:   func() (string, error) { return "proj1", nil },
+		CacheStore:       store,
+	}
+
+	id, err := ResolveNameToUUID(context.Background(), "Done", "state_id", deps)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Should return stale cached value
+	if id != "stale-uuid" {
+		t.Errorf("expected stale-uuid (cached), got %s", id)
+	}
+
+	// Wait for background refresh
+	cache.PendingRefreshes.Wait()
+
+	// Background refresh should have made an API call
+	if apiCalls != 1 {
+		t.Errorf("expected 1 API call (background refresh), got %d", apiCalls)
+	}
+}
+
+func TestResolveNameToUUID_CacheExpired(t *testing.T) {
+	apiCalls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		apiCalls++
+		fmt.Fprint(w, `[{"id": "fresh-uuid", "name": "Done"}]`)
+	}))
+	defer srv.Close()
+
+	store := testCacheStore(t)
+
+	// Pre-populate with expired cache (8 days old)
+	cr := &cache.CachedResource{
+		FetchedAt: time.Now().Add(-8 * 24 * time.Hour),
+		Entries: []cache.Entry{
+			{ID: "expired-uuid", Name: "Done"},
+		},
+	}
+	store.Save("test-ws", "proj1", cache.KindStates, cr)
+
+	deps := &Deps{
+		NewClient: func() (*api.Client, error) {
+			return api.NewClient(srv.URL, "tok", "test-ws", false, nil), nil
+		},
+		RequireWorkspace: func(c *api.Client) error { return nil },
+		RequireProject:   func() (string, error) { return "proj1", nil },
+		CacheStore:       store,
+	}
+
+	id, err := ResolveNameToUUID(context.Background(), "Done", "state_id", deps)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Should fall through to API since cache is expired
+	if id != "fresh-uuid" {
+		t.Errorf("expected fresh-uuid (from API), got %s", id)
+	}
+	if apiCalls != 1 {
+		t.Errorf("expected 1 API call (expired cache), got %d", apiCalls)
+	}
+}
+
+func TestResolveNameToUUID_NoCacheStore(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `[{"id": "api-uuid", "name": "Done"}]`)
+	}))
+	defer srv.Close()
+
+	// No CacheStore — should work like before
+	deps := &Deps{
+		NewClient: func() (*api.Client, error) {
+			return api.NewClient(srv.URL, "tok", "test-ws", false, nil), nil
+		},
+		RequireWorkspace: func(c *api.Client) error { return nil },
+		RequireProject:   func() (string, error) { return "proj1", nil },
+		CacheStore:       nil,
+	}
+
+	id, err := ResolveNameToUUID(context.Background(), "Done", "state_id", deps)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if id != "api-uuid" {
+		t.Errorf("expected api-uuid, got %s", id)
+	}
 }

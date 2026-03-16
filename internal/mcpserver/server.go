@@ -7,6 +7,7 @@ import (
 
 	"github.com/mggarofalo/plane-cli/internal/api"
 	"github.com/mggarofalo/plane-cli/internal/auth"
+	"github.com/mggarofalo/plane-cli/internal/cache"
 	"github.com/mggarofalo/plane-cli/internal/cmdgen"
 	"github.com/mggarofalo/plane-cli/internal/docs"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -82,7 +83,8 @@ func (c *Config) BuildDepsFor(workspace, project string) *cmdgen.Deps {
 			}
 			return project, nil
 		},
-		IsUUID: func(s string) bool { return isUUID(s) },
+		IsUUID:     func(s string) bool { return isUUID(s) },
+		CacheStore: cache.NewStore(c.Profile),
 	}
 }
 
