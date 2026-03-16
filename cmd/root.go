@@ -33,6 +33,7 @@ var (
 	flagField     string
 	flagFields    string
 	flagIDOnly    bool
+	flagBatch     bool
 )
 
 var rootCmd = &cobra.Command{
@@ -65,11 +66,16 @@ func init() {
 	pf.StringVar(&flagField, "field", "", "Extract a single field from JSON response (supports dotted paths, e.g. state_detail.name)")
 	pf.StringVar(&flagFields, "fields", "", "Extract multiple fields as TSV (comma-separated, e.g. id,name,state_detail.name)")
 	pf.BoolVar(&flagIDOnly, "id-only", false, "Print only the resource ID (raw UUID, no newline)")
+	pf.BoolVar(&flagBatch, "batch", false, "Read JSONL from stdin; each line is a separate request body (POST/PATCH/PUT only)")
 	pf.BoolVar(&flagNoUpdateCheck, "no-update-check", false, "Disable startup update check")
 	rootCmd.MarkFlagsMutuallyExclusive("field", "fields")
 	rootCmd.MarkFlagsMutuallyExclusive("id-only", "output")
 	rootCmd.MarkFlagsMutuallyExclusive("id-only", "field")
 	rootCmd.MarkFlagsMutuallyExclusive("id-only", "fields")
+	rootCmd.MarkFlagsMutuallyExclusive("batch", "dry-run")
+	rootCmd.MarkFlagsMutuallyExclusive("batch", "field")
+	rootCmd.MarkFlagsMutuallyExclusive("batch", "fields")
+	rootCmd.MarkFlagsMutuallyExclusive("batch", "id-only")
 }
 
 // Execute runs the root command and returns an exit code.
@@ -143,6 +149,7 @@ func registerDynamicCommands() {
 		FlagStrict:       &flagStrict,
 		FlagNoResolve:    &flagNoResolve,
 		FlagIDOnly:       &flagIDOnly,
+		FlagBatch:        &flagBatch,
 		Profile:          profile,
 		BaseURL:          docsURL,
 	}
