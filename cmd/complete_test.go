@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 )
@@ -115,14 +116,14 @@ func TestOutputJSON(t *testing.T) {
 func TestRunComplete_Priority(t *testing.T) {
 	// Priority is a static list — does not require API calls.
 	// We just test that runComplete doesn't error with a nil context for priority.
-	err := runComplete(nil, "priority")
+	err := runComplete(context.Background(), "priority")
 	if err != nil {
 		t.Fatalf("unexpected error for priority: %v", err)
 	}
 }
 
 func TestRunComplete_UnsupportedParam(t *testing.T) {
-	err := runComplete(nil, "nonexistent")
+	err := runComplete(context.Background(), "nonexistent")
 	if err == nil {
 		t.Fatal("expected error for unsupported param")
 	}
@@ -135,7 +136,7 @@ func TestRunComplete_UnsupportedParam(t *testing.T) {
 func TestRunComplete_CaseInsensitive(t *testing.T) {
 	// Priority should work regardless of case
 	for _, param := range []string{"PRIORITY", "Priority", "priority"} {
-		err := runComplete(nil, param)
+		err := runComplete(context.Background(), param)
 		if err != nil {
 			t.Errorf("unexpected error for param %q: %v", param, err)
 		}
@@ -146,7 +147,7 @@ func TestRunComplete_LabelAliases(t *testing.T) {
 	// "label" and "labels" should both be recognized (they'll fail on API
 	// call since we have no client, but the param dispatch should succeed).
 	for _, param := range []string{"label", "labels"} {
-		err := runComplete(nil, param)
+		err := runComplete(context.Background(), param)
 		if err == nil {
 			// Without auth config, we expect an error from NewClient, not from
 			// "unsupported parameter".
