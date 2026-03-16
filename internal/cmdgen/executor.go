@@ -977,6 +977,38 @@ func PostCreateActions(ctx context.Context, relations map[string]string, respBod
 	}
 }
 
+// IsResolvableParam returns true if the parameter name corresponds to a
+// name-resolvable field (one where users can pass a human-readable name
+// instead of a UUID).
+func IsResolvableParam(paramName string) bool {
+	if _, ok := resolvableParams[paramName]; ok {
+		return true
+	}
+	if strings.HasSuffix(paramName, "_id") {
+		kind := cache.ResourceKindFromParam(paramName)
+		return kind != ""
+	}
+	return false
+}
+
+// IsIssueRefParam returns true if the parameter accepts work-item references
+// (UUIDs or sequence IDs like "PROJ-42").
+func IsIssueRefParam(paramName string) bool {
+	return issueRefParams[paramName]
+}
+
+// paramResolutionHint returns a short annotation for the help text of a
+// resolvable or issue-reference parameter. Returns "" if no hint applies.
+func paramResolutionHint(paramName string) string {
+	if issueRefParams[paramName] {
+		return " (accepts UUID or sequence ID, e.g. PROJ-42)"
+	}
+	if IsResolvableParam(paramName) {
+		return " (accepts name or UUID)"
+	}
+	return ""
+}
+
 // GenerateHelp prints help text for a spec.
 func GenerateHelp(w io.Writer, topicName, cmdName string, spec *docs.EndpointSpec) {
 	fmt.Fprintf(w, "Usage: plane %s %s [flags]\n\n", topicName, cmdName)
@@ -986,6 +1018,10 @@ func GenerateHelp(w io.Writer, topicName, cmdName string, spec *docs.EndpointSpe
 	if len(spec.Params) == 0 {
 		return
 	}
+
+	// Collect resolvable param names for the summary section
+	var resolvableNames []string
+	var issueRefNames []string
 
 	fmt.Fprintln(w, "Flags:")
 	for _, p := range spec.Params {
@@ -1001,6 +1037,16 @@ func GenerateHelp(w io.Writer, topicName, cmdName string, spec *docs.EndpointSpe
 			req = " (required)"
 		}
 
+		hint := paramResolutionHint(p.Name)
+
+		// Track resolvable params for summary
+		if IsResolvableParam(p.Name) {
+			resolvableNames = append(resolvableNames, ParamToFlagName(p.Name))
+		}
+		if IsIssueRefParam(p.Name) {
+			issueRefNames = append(issueRefNames, ParamToFlagName(p.Name))
+		}
+
 		if IsHTMLParam(p.Name) {
 			mdFlag := MarkdownFlagName(p.Name)
 			htmlFlag := ParamToFlagName(p.Name)
@@ -1014,8 +1060,23 @@ func GenerateHelp(w io.Writer, topicName, cmdName string, spec *docs.EndpointSpe
 		}
 
 		flagName := ParamToFlagName(p.Name)
-		fmt.Fprintf(w, "  --%s\t%s%s\n", flagName, desc, req)
+		fmt.Fprintf(w, "  --%s\t%s%s%s\n", flagName, desc, hint, req)
 	}
+
+	// Print resolution summary when the command has resolvable params
+	if len(resolvableNames) > 0 || len(issueRefNames) > 0 {
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, "Name resolution:")
+		if len(resolvableNames) > 0 {
+			fmt.Fprintf(w, "  Flags that accept names: --%s\n", strings.Join(resolvableNames, ", --"))
+		}
+		if len(issueRefNames) > 0 {
+			fmt.Fprintf(w, "  Flags that accept sequence IDs (e.g. PROJ-42): --%s\n", strings.Join(issueRefNames, ", --"))
+		}
+		fmt.Fprintln(w, "  Use --no-resolve to skip resolution; --strict to treat failures as errors.")
+		fmt.Fprintln(w, "  Run 'plane resolution' for full details on name resolution.")
+	}
+
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Global flags:")
 	fmt.Fprintln(w, "  -w, --workspace\tWorkspace slug")

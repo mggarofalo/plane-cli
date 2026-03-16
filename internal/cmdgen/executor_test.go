@@ -1562,3 +1562,172 @@ func TestWebURL_ExtractableViaFieldFlag(t *testing.T) {
 		t.Errorf("expected --field web_url to output %q, got %q", expected, got)
 	}
 }
+
+func TestGenerateHelp_ResolvableAnnotations(t *testing.T) {
+	spec := &docs.EndpointSpec{
+		TopicName:    "issue",
+		EntryTitle:   "Create Work Item",
+		SourceURL:    "https://example.com",
+		Method:       "POST",
+		PathTemplate: "/api/v1/workspaces/{workspace_slug}/projects/{project_id}/issues/",
+		Params: []docs.ParamSpec{
+			{Name: "name", Type: "string", Description: "Issue title"},
+			{Name: "state_id", Type: "string", Description: "UUID of the state"},
+			{Name: "label_id", Type: "string", Description: "UUID of the label"},
+			{Name: "state", Type: "string", Description: "State of the issue"},
+			{Name: "priority", Type: "string", Description: "Issue priority"},
+		},
+	}
+
+	var buf bytes.Buffer
+	GenerateHelp(&buf, "issue", "create", spec)
+	output := buf.String()
+
+	// Resolvable params should have "(accepts name or UUID)" annotation
+	if !strings.Contains(output, "UUID of the state (accepts name or UUID)") {
+		t.Errorf("expected state_id to have name-resolvable annotation, got:\n%s", output)
+	}
+	if !strings.Contains(output, "UUID of the label (accepts name or UUID)") {
+		t.Errorf("expected label_id to have name-resolvable annotation, got:\n%s", output)
+	}
+	if !strings.Contains(output, "State of the issue (accepts name or UUID)") {
+		t.Errorf("expected state (resolvableParams entry) to have annotation, got:\n%s", output)
+	}
+
+	// Non-resolvable params should NOT have the annotation
+	if strings.Contains(output, "Issue title (accepts name or UUID)") {
+		t.Error("name param should not have resolvable annotation")
+	}
+	if strings.Contains(output, "Issue priority (accepts name or UUID)") {
+		t.Error("priority param should not have resolvable annotation")
+	}
+
+	// Name resolution summary section should be present
+	if !strings.Contains(output, "Name resolution:") {
+		t.Error("expected 'Name resolution:' summary section in help output")
+	}
+	if !strings.Contains(output, "Flags that accept names:") {
+		t.Error("expected 'Flags that accept names:' in resolution summary")
+	}
+	if !strings.Contains(output, "plane resolution") {
+		t.Error("expected reference to 'plane resolution' command")
+	}
+}
+
+func TestGenerateHelp_SequenceIDAnnotations(t *testing.T) {
+	spec := &docs.EndpointSpec{
+		TopicName:    "issue",
+		EntryTitle:   "Get Work Item Detail",
+		SourceURL:    "https://example.com",
+		Method:       "GET",
+		PathTemplate: "/api/v1/workspaces/{workspace_slug}/projects/{project_id}/issues/{work_item_id}/",
+		Params: []docs.ParamSpec{
+			{Name: "work_item_id", Type: "string", Required: true, Description: "Work item identifier", Location: "path"},
+			{Name: "parent", Type: "string", Description: "Parent issue"},
+			{Name: "issues", Type: "string[]", Description: "Related issues"},
+		},
+	}
+
+	var buf bytes.Buffer
+	GenerateHelp(&buf, "issue", "get", spec)
+	output := buf.String()
+
+	// issueRefParams should have sequence ID annotation
+	if !strings.Contains(output, "(accepts UUID or sequence ID, e.g. PROJ-42)") {
+		t.Errorf("expected sequence ID annotation for work_item_id, got:\n%s", output)
+	}
+
+	// Should appear for parent and issues too
+	parentLine := false
+	issuesLine := false
+	for _, line := range strings.Split(output, "\n") {
+		if strings.Contains(line, "--parent") && strings.Contains(line, "sequence ID") {
+			parentLine = true
+		}
+		if strings.Contains(line, "--issues") && strings.Contains(line, "sequence ID") {
+			issuesLine = true
+		}
+	}
+	if !parentLine {
+		t.Error("expected sequence ID annotation for --parent flag")
+	}
+	if !issuesLine {
+		t.Error("expected sequence ID annotation for --issues flag")
+	}
+
+	// Summary should mention sequence ID flags
+	if !strings.Contains(output, "Flags that accept sequence IDs") {
+		t.Error("expected sequence ID summary in Name resolution section")
+	}
+}
+
+func TestGenerateHelp_NoResolutionSection_WhenNoResolvableParams(t *testing.T) {
+	spec := &docs.EndpointSpec{
+		TopicName:    "project",
+		EntryTitle:   "List Projects",
+		SourceURL:    "https://example.com",
+		Method:       "GET",
+		PathTemplate: "/api/v1/workspaces/{workspace_slug}/projects/",
+		Params: []docs.ParamSpec{
+			{Name: "name", Type: "string", Description: "Filter by name"},
+			{Name: "sort_by", Type: "string", Description: "Sort order"},
+		},
+	}
+
+	var buf bytes.Buffer
+	GenerateHelp(&buf, "project", "list", spec)
+	output := buf.String()
+
+	if strings.Contains(output, "Name resolution:") {
+		t.Error("should not show Name resolution section when no params are resolvable")
+	}
+}
+
+func TestIsResolvableParam(t *testing.T) {
+	tests := []struct {
+		param string
+		want  bool
+	}{
+		{"state", true},      // resolvableParams entry
+		{"module", true},     // resolvableParams entry
+		{"cycle", true},      // resolvableParams entry
+		{"label", true},      // resolvableParams entry
+		{"state_id", true},   // _id suffix, known kind
+		{"label_id", true},   // _id suffix, known kind
+		{"member_id", true},  // _id suffix, known kind
+		{"name", false},      // not resolvable
+		{"priority", false},  // not resolvable
+		{"random_id", false}, // _id suffix but unknown kind
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.param, func(t *testing.T) {
+			got := IsResolvableParam(tt.param)
+			if got != tt.want {
+				t.Errorf("IsResolvableParam(%q) = %v, want %v", tt.param, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsIssueRefParam(t *testing.T) {
+	tests := []struct {
+		param string
+		want  bool
+	}{
+		{"work_item_id", true},
+		{"parent", true},
+		{"issues", true},
+		{"state_id", false},
+		{"name", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.param, func(t *testing.T) {
+			got := IsIssueRefParam(tt.param)
+			if got != tt.want {
+				t.Errorf("IsIssueRefParam(%q) = %v, want %v", tt.param, got, tt.want)
+			}
+		})
+	}
+}
