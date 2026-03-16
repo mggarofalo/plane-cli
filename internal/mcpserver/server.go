@@ -61,11 +61,11 @@ func (c *Config) NewClient(workspace string) (*api.Client, error) {
 	return api.NewClient(apiURL, resolved.Credential.Token(), workspace, false, nil), nil
 }
 
-// BuildDeps creates a cmdgen.Deps struct for name resolution operations.
-// This allows the MCP executor to reuse the CLI's resolution logic.
-func (c *Config) BuildDeps() *cmdgen.Deps {
-	workspace := c.Workspace
-	project := c.Project
+// BuildDepsFor creates a cmdgen.Deps struct for name resolution operations
+// using the given workspace and project values (which may be per-call overrides).
+// This allows the MCP executor to reuse the CLI's resolution logic with the
+// correct context for each tool call.
+func (c *Config) BuildDepsFor(workspace, project string) *cmdgen.Deps {
 	return &cmdgen.Deps{
 		NewClient: func() (*api.Client, error) {
 			return c.NewClient(workspace)

@@ -188,3 +188,36 @@ func TestErrorResult(t *testing.T) {
 		t.Fatalf("expected 1 content item, got %d", len(result.Content))
 	}
 }
+
+func TestIsUUID(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected bool
+	}{
+		{"550e8400-e29b-41d4-a716-446655440000", true},
+		{"8b1ccfc2-4b91-484f-b7c5-a9e9304ac13b", true},
+		{"00000000-0000-0000-0000-000000000000", true},
+		{"ABCDEF01-2345-6789-abcd-ef0123456789", true},
+		// Too short
+		{"550e8400-e29b-41d4-a716-44665544000", false},
+		// Too long
+		{"550e8400-e29b-41d4-a716-4466554400001", false},
+		// Missing hyphens
+		{"550e8400xe29b-41d4-a716-446655440000", false},
+		// Non-hex characters (BUG-004 regression)
+		{"550e8400-e29b-41d4-a716-44665544000g", false},
+		{"zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz", false},
+		{"hello-wo-rld!-this-is-n-ot-a-valid-uu", false},
+		// Empty
+		{"", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			result := isUUID(tt.input)
+			if result != tt.expected {
+				t.Errorf("isUUID(%q) = %v, want %v", tt.input, result, tt.expected)
+			}
+		})
+	}
+}

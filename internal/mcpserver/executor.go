@@ -19,7 +19,7 @@ import (
 // and relation attachment (module/cycle) -- mirroring the CLI executor
 // but without Cobra dependency.
 func ExecuteEndpoint(ctx context.Context, spec *docs.EndpointSpec, args map[string]any, cfg *Config) ([]byte, error) {
-	workspace, projectID, err := resolveContext(spec, args, cfg)
+	workspace, projectID, err := resolveContext(ctx, spec, args, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -30,13 +30,13 @@ func ExecuteEndpoint(ctx context.Context, spec *docs.EndpointSpec, args map[stri
 	}
 
 	// Build URL from path template
-	reqURL, err := buildURLFromMap(client, spec, args, projectID, cfg)
+	reqURL, err := buildURLFromMap(ctx, client, spec, args, projectID, workspace, cfg)
 	if err != nil {
 		return nil, err
 	}
 
 	// Collect body params
-	body, err := collectBodyFromMap(ctx, spec, args, cfg)
+	body, err := collectBodyFromMap(ctx, spec, args, workspace, projectID, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +54,7 @@ func ExecuteEndpoint(ctx context.Context, spec *docs.EndpointSpec, args map[stri
 	case "GET":
 		if allVal, ok := args["all"]; ok {
 			if b, isBool := allVal.(bool); isBool && b {
-				return executeAutoPageinate(ctx, client, reqURL, spec, args)
+				return executeAutoPageinate(ctx, client, reqURL, args)
 			}
 		}
 		respBody, err = client.GetPaginated(ctx, reqURL, paginationFromArgs(args))
@@ -100,7 +100,7 @@ func ExecuteEndpoint(ctx context.Context, spec *docs.EndpointSpec, args map[stri
 
 // resolveContext determines workspace and project from per-call args or
 // server-level defaults.
-func resolveContext(spec *docs.EndpointSpec, args map[string]any, cfg *Config) (workspace, projectID string, err error) {
+func resolveContext(ctx context.Context, spec *docs.EndpointSpec, args map[string]any, cfg *Config) (workspace, projectID string, err error) {
 	workspace = stringArg(args, "workspace")
 	if workspace == "" {
 		workspace = cfg.Workspace
@@ -121,7 +121,7 @@ func resolveContext(spec *docs.EndpointSpec, args map[string]any, cfg *Config) (
 		}
 		// Resolve project identifier to UUID if needed
 		if !isUUID(projectRaw) {
-			resolved, resolveErr := resolveProjectIdentifier(context.Background(), projectRaw, workspace, cfg)
+			resolved, resolveErr := resolveProjectIdentifier(ctx, projectRaw, workspace, cfg)
 			if resolveErr != nil {
 				return "", "", fmt.Errorf("resolving project %q: %w", projectRaw, resolveErr)
 			}
@@ -158,13 +158,9 @@ func resolveProjectIdentifier(ctx context.Context, identifier, workspace string,
 
 // buildURLFromMap constructs the API URL by substituting path params and
 // appending query params from the args map.
-func buildURLFromMap(client *api.Client, spec *docs.EndpointSpec, args map[string]any, projectID string, cfg *Config) (string, error) {
+func buildURLFromMap(ctx context.Context, client *api.Client, spec *docs.EndpointSpec, args map[string]any, projectID, workspace string, cfg *Config) (string, error) {
 	path := spec.PathTemplate
 
-	workspace := stringArg(args, "workspace")
-	if workspace == "" {
-		workspace = cfg.Workspace
-	}
 	path = strings.ReplaceAll(path, "{workspace_slug}", workspace)
 	if projectID != "" {
 		path = strings.ReplaceAll(path, "{project_id}", projectID)
@@ -184,7 +180,7 @@ func buildURLFromMap(client *api.Client, spec *docs.EndpointSpec, args map[strin
 			return "", fmt.Errorf("required path parameter %q not provided", p.Name)
 		}
 		// Resolve name to UUID if needed
-		resolved, resolveErr := resolveValue(context.Background(), val, p.Name, client, projectID, cfg)
+		resolved, resolveErr := resolveValue(ctx, val, p.Name, workspace, projectID, cfg)
 		if resolveErr != nil {
 			return "", resolveErr
 		}
@@ -214,7 +210,7 @@ func buildURLFromMap(client *api.Client, spec *docs.EndpointSpec, args map[strin
 }
 
 // collectBodyFromMap builds the request body from the args map.
-func collectBodyFromMap(ctx context.Context, spec *docs.EndpointSpec, args map[string]any, cfg *Config) (map[string]any, error) {
+func collectBodyFromMap(ctx context.Context, spec *docs.EndpointSpec, args map[string]any, workspace, projectID string, cfg *Config) (map[string]any, error) {
 	if spec.Method == "GET" || spec.Method == "DELETE" {
 		return nil, nil
 	}
@@ -262,7 +258,7 @@ func collectBodyFromMap(ctx context.Context, spec *docs.EndpointSpec, args map[s
 			}
 		default:
 			if s, ok := val.(string); ok && s != "" {
-				resolved, err := resolveValue(ctx, s, p.Name, nil, "", cfg)
+				resolved, err := resolveValue(ctx, s, p.Name, workspace, projectID, cfg)
 				if err != nil {
 					return nil, err
 				}
@@ -278,8 +274,9 @@ func collectBodyFromMap(ctx context.Context, spec *docs.EndpointSpec, args map[s
 }
 
 // resolveValue resolves a value to UUID if needed, similar to cmdgen.resolveIfNeeded
-// but without Cobra dependency.
-func resolveValue(ctx context.Context, value, paramName string, client *api.Client, projectID string, cfg *Config) (string, error) {
+// but without Cobra dependency. It uses the per-call workspace and projectID for
+// name resolution so that per-tool-call overrides are respected (not just server defaults).
+func resolveValue(ctx context.Context, value, paramName, workspace, projectID string, cfg *Config) (string, error) {
 	if isUUID(value) {
 		return value, nil
 	}
@@ -287,7 +284,7 @@ func resolveValue(ctx context.Context, value, paramName string, client *api.Clie
 	// Sequence ID resolution for issue-reference params
 	if cmdgen.IsSequenceID(value) {
 		if isIssueRefParam(paramName) {
-			deps := cfg.BuildDeps()
+			deps := cfg.BuildDepsFor(workspace, projectID)
 			resolved, err := cmdgen.ResolveSequenceID(ctx, value, deps)
 			if err == nil {
 				return resolved, nil
@@ -299,7 +296,7 @@ func resolveValue(ctx context.Context, value, paramName string, client *api.Clie
 
 	// Standard _id suffix params
 	if strings.HasSuffix(paramName, "_id") {
-		deps := cfg.BuildDeps()
+		deps := cfg.BuildDepsFor(workspace, projectID)
 		resolved, err := cmdgen.ResolveNameToUUID(ctx, value, paramName, deps)
 		if err != nil {
 			return value, nil // best-effort: return literal
@@ -313,7 +310,7 @@ func resolveValue(ctx context.Context, value, paramName string, client *api.Clie
 		"cycle": "cycle", "label": "label",
 	}
 	if resourceName, ok := resolvableParams[paramName]; ok {
-		deps := cfg.BuildDeps()
+		deps := cfg.BuildDepsFor(workspace, projectID)
 		resolved, err := cmdgen.ResolveNameToUUID(ctx, value, resourceName+"_id", deps)
 		if err != nil {
 			return value, nil
@@ -352,7 +349,7 @@ func postCreateActionsRaw(ctx context.Context, relations map[string]string, resp
 }
 
 // executeAutoPageinate fetches all pages and returns combined results.
-func executeAutoPageinate(ctx context.Context, client *api.Client, baseURL string, spec *docs.EndpointSpec, args map[string]any) ([]byte, error) {
+func executeAutoPageinate(ctx context.Context, client *api.Client, baseURL string, args map[string]any) ([]byte, error) {
 	var allResults []json.RawMessage
 	cursor := ""
 	perPage := 100
@@ -472,6 +469,10 @@ func isUUID(s string) bool {
 	for i, c := range s {
 		if i == 8 || i == 13 || i == 18 || i == 23 {
 			if c != '-' {
+				return false
+			}
+		} else {
+			if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
 				return false
 			}
 		}
