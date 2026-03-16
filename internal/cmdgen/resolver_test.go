@@ -213,7 +213,9 @@ func TestResolveNameToUUID_CacheHit(t *testing.T) {
 			{ID: "cached-uuid", Name: "Done"},
 		},
 	}
-	store.Save("test-ws", "proj1", cache.KindStates, cr)
+	if err := store.Save("test-ws", "proj1", cache.KindStates, cr); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
 
 	deps := &Deps{
 		NewClient: func() (*api.Client, error) {
@@ -293,7 +295,9 @@ func TestResolveNameToUUID_CacheStale(t *testing.T) {
 			{ID: "stale-uuid", Name: "Done"},
 		},
 	}
-	store.Save("test-ws", "proj1", cache.KindStates, cr)
+	if err := store.Save("test-ws", "proj1", cache.KindStates, cr); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
 
 	deps := &Deps{
 		NewClient: func() (*api.Client, error) {
@@ -339,7 +343,9 @@ func TestResolveNameToUUID_CacheExpired(t *testing.T) {
 			{ID: "expired-uuid", Name: "Done"},
 		},
 	}
-	store.Save("test-ws", "proj1", cache.KindStates, cr)
+	if err := store.Save("test-ws", "proj1", cache.KindStates, cr); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
 
 	deps := &Deps{
 		NewClient: func() (*api.Client, error) {
