@@ -5,6 +5,89 @@ import (
 	"testing"
 )
 
+func TestExtractID_SingleObject(t *testing.T) {
+	data := []byte(`{"id": "550e8400-e29b-41d4-a716-446655440000", "name": "Test Issue"}`)
+
+	var buf bytes.Buffer
+	err := ExtractID(&buf, data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := "550e8400-e29b-41d4-a716-446655440000"
+	if buf.String() != expected {
+		t.Errorf("expected %q, got %q", expected, buf.String())
+	}
+}
+
+func TestExtractID_NoTrailingNewline(t *testing.T) {
+	data := []byte(`{"id": "abc-123", "name": "Test"}`)
+
+	var buf bytes.Buffer
+	err := ExtractID(&buf, data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := buf.String()
+	if got != "abc-123" {
+		t.Errorf("expected %q, got %q", "abc-123", got)
+	}
+	if got[len(got)-1] == '\n' {
+		t.Error("output should not end with a newline")
+	}
+}
+
+func TestExtractID_Array(t *testing.T) {
+	data := []byte(`[{"id": "a1", "name": "First"}, {"id": "a2", "name": "Second"}]`)
+
+	var buf bytes.Buffer
+	err := ExtractID(&buf, data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := "a1\na2"
+	if buf.String() != expected {
+		t.Errorf("expected %q, got %q", expected, buf.String())
+	}
+}
+
+func TestExtractID_PaginatedEnvelope(t *testing.T) {
+	data := []byte(`{"results": [{"id": "p1"}, {"id": "p2"}], "total_count": 2}`)
+
+	var buf bytes.Buffer
+	err := ExtractID(&buf, data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := "p1\np2"
+	if buf.String() != expected {
+		t.Errorf("expected %q, got %q", expected, buf.String())
+	}
+}
+
+func TestExtractID_MissingID(t *testing.T) {
+	data := []byte(`{"name": "No ID here"}`)
+
+	var buf bytes.Buffer
+	err := ExtractID(&buf, data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Missing id should produce empty string (no newline)
+	if buf.String() != "" {
+		t.Errorf("expected empty string, got %q", buf.String())
+	}
+}
+
+func TestExtractID_InvalidJSON(t *testing.T) {
+	data := []byte(`not json`)
+
+	var buf bytes.Buffer
+	err := ExtractID(&buf, data)
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+}
+
 func TestExtractField_SingleObject(t *testing.T) {
 	data := []byte(`{"id": "abc-123", "name": "Test Issue", "priority": 2}`)
 
