@@ -310,7 +310,6 @@ func TestResourceSegment(t *testing.T) {
 	}
 }
 
-
 func TestToWebBase(t *testing.T) {
 	tests := []struct {
 		name     string

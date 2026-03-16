@@ -188,4 +188,3 @@ func resourceSegment(pathTemplate string) string {
 	}
 	return ""
 }
-
