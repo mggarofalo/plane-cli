@@ -72,7 +72,7 @@ Write-Info "Install directory: $InstallDir"
 # ── Fetch latest version ─────────────────────────────────────────────────────
 
 Write-Info 'Querying GitHub for latest release...'
-$ReleaseUrl = "https://api.github.com/repos/$Repo/releases/latest"
+$ReleaseUrl = if ($env:PLANE_RELEASE_API_URL) { $env:PLANE_RELEASE_API_URL } else { "https://api.github.com/repos/$Repo/releases/latest" }
 try {
     $Release = Invoke-RestMethod -Uri $ReleaseUrl -UseBasicParsing
 } catch {
@@ -91,7 +91,7 @@ Write-Info "Latest version: $Version ($VersionNum)"
 # ── Download archive and checksums ────────────────────────────────────────────
 
 $ArchiveName = "plane_${VersionNum}_windows_${Arch}.zip"
-$DownloadBase = "https://github.com/$Repo/releases/download/$Version"
+$DownloadBase = if ($env:PLANE_DOWNLOAD_BASE_URL) { $env:PLANE_DOWNLOAD_BASE_URL } else { "https://github.com/$Repo/releases/download/$Version" }
 $ArchiveUrl = "$DownloadBase/$ArchiveName"
 $ChecksumsUrl = "$DownloadBase/checksums.txt"
 

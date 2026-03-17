@@ -132,7 +132,7 @@ fi
 # ── Fetch latest version ─────────────────────────────────────────────────────
 
 info "Querying GitHub for latest release..."
-RELEASE_URL="https://api.github.com/repos/${REPO}/releases/latest"
+RELEASE_URL="${PLANE_RELEASE_API_URL:-https://api.github.com/repos/${REPO}/releases/latest}"
 RELEASE_JSON="$(curl -fsSL "$RELEASE_URL")" || error "Failed to fetch latest release from GitHub"
 
 # Extract tag name (e.g., "v0.3.0") — works without jq
@@ -148,7 +148,7 @@ info "Latest version: ${VERSION} (${VERSION_NUM})"
 # ── Download archive and checksums ────────────────────────────────────────────
 
 ARCHIVE_NAME="${BINARY_NAME}_${VERSION_NUM}_${OS}_${ARCH}.tar.gz"
-DOWNLOAD_BASE="https://github.com/${REPO}/releases/download/${VERSION}"
+DOWNLOAD_BASE="${PLANE_DOWNLOAD_BASE_URL:-https://github.com/${REPO}/releases/download/${VERSION}}"
 ARCHIVE_URL="${DOWNLOAD_BASE}/${ARCHIVE_NAME}"
 CHECKSUMS_URL="${DOWNLOAD_BASE}/checksums.txt"
 
