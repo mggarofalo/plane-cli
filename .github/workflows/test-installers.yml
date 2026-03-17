@@ -33,7 +33,10 @@ jobs:
         shell: pwsh
         run: |
           Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
-          $results = Invoke-ScriptAnalyzer -Path install.ps1 -Severity Warning,Error
+          # PSAvoidUsingWriteHost: Write-Host is correct for an installer (colored console output)
+          # PSUseBOMForUnicodeEncodedFile: UTF-8 without BOM is intentional
+          $exclude = @('PSAvoidUsingWriteHost', 'PSUseBOMForUnicodeEncodedFile')
+          $results = Invoke-ScriptAnalyzer -Path install.ps1 -Severity Warning,Error -ExcludeRule $exclude
           if ($results) {
             $results | Format-Table -AutoSize
             exit 1
