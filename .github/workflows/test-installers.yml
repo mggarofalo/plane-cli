@@ -236,43 +236,54 @@ jobs:
       - name: "Test: --with-mcp creates new settings.json"
         shell: pwsh
         run: |
-          $TestHome = Join-Path $env:TEMP "plane-test-mcp-$(Get-Random)"
-          New-Item -ItemType Directory $TestHome -Force | Out-Null
+          $ClaudeDir = Join-Path $HOME ".claude"
+          $SettingsFile = Join-Path $ClaudeDir "settings.json"
           $InstallDir = Join-Path $env:TEMP "plane-test-mcp-install"
 
-          # Override HOME so the script writes to our test directory
-          $OrigHome = $HOME
-          $global:HOME = $TestHome
+          # $HOME is read-only in PS7, so use real HOME with backup/restore
+          $HadSettings = Test-Path $SettingsFile
+          if ($HadSettings) { Copy-Item $SettingsFile "$SettingsFile.bak" }
 
           try {
+            if (Test-Path $SettingsFile) { Remove-Item $SettingsFile }
+
             & .\install.ps1 -InstallDir $InstallDir -WithMcp
+
+            if (-not (Test-Path $SettingsFile)) {
+              Write-Error "FAIL: settings.json not created at $SettingsFile"
+              exit 1
+            }
+
+            $Content = Get-Content $SettingsFile -Raw
+            if ($Content -notmatch '"plane"') {
+              Write-Error "FAIL: plane server missing from settings.json"
+              exit 1
+            }
+            Write-Host "PASS: --with-mcp creates settings.json"
           } finally {
-            $global:HOME = $OrigHome
+            if ($HadSettings) {
+              Copy-Item "$SettingsFile.bak" $SettingsFile -Force
+              Remove-Item "$SettingsFile.bak"
+            } elseif (Test-Path $SettingsFile) {
+              Remove-Item $SettingsFile
+            }
           }
-
-          $SettingsFile = Join-Path $TestHome ".claude" "settings.json"
-          if (-not (Test-Path $SettingsFile)) {
-            Write-Error "FAIL: settings.json not created at $SettingsFile"
-            exit 1
-          }
-
-          $Content = Get-Content $SettingsFile -Raw
-          if ($Content -notmatch '"plane"') {
-            Write-Error "FAIL: plane server missing from settings.json"
-            exit 1
-          }
-          Write-Host "PASS: --with-mcp creates settings.json"
 
       - name: "Test: --with-mcp merges existing settings"
         shell: pwsh
         run: |
-          $TestHome = Join-Path $env:TEMP "plane-test-merge-$(Get-Random)"
-          $ClaudeDir = Join-Path $TestHome ".claude"
-          New-Item -ItemType Directory $ClaudeDir -Force | Out-Null
+          $ClaudeDir = Join-Path $HOME ".claude"
+          $SettingsFile = Join-Path $ClaudeDir "settings.json"
           $InstallDir = Join-Path $env:TEMP "plane-test-merge-install"
 
-          # Pre-create settings.json with another server
-          $ExistingSettings = @'
+          # Backup any real settings
+          $HadSettings = Test-Path $SettingsFile
+          if ($HadSettings) { Copy-Item $SettingsFile "$SettingsFile.bak" }
+          if (-not (Test-Path $ClaudeDir)) { New-Item -ItemType Directory $ClaudeDir -Force | Out-Null }
+
+          try {
+            # Pre-create settings.json with another server
+            $ExistingSettings = @'
           {
             "mcpServers": {
               "other-server": {
@@ -283,32 +294,33 @@ jobs:
             "customKey": true
           }
           '@
-          Set-Content (Join-Path $ClaudeDir "settings.json") $ExistingSettings
+            Set-Content $SettingsFile $ExistingSettings
 
-          $OrigHome = $HOME
-          $global:HOME = $TestHome
-
-          try {
             & .\install.ps1 -InstallDir $InstallDir -WithMcp
+
+            $Content = Get-Content $SettingsFile -Raw
+
+            if ($Content -notmatch '"other-server"') {
+              Write-Error "FAIL: other-server was clobbered"
+              exit 1
+            }
+            if ($Content -notmatch '"plane"') {
+              Write-Error "FAIL: plane server not added"
+              exit 1
+            }
+            if ($Content -notmatch '"customKey"') {
+              Write-Error "FAIL: customKey was clobbered"
+              exit 1
+            }
+            Write-Host "PASS: --with-mcp merges existing settings"
           } finally {
-            $global:HOME = $OrigHome
+            if ($HadSettings) {
+              Copy-Item "$SettingsFile.bak" $SettingsFile -Force
+              Remove-Item "$SettingsFile.bak"
+            } elseif (Test-Path $SettingsFile) {
+              Remove-Item $SettingsFile
+            }
           }
-
-          $Content = Get-Content (Join-Path $ClaudeDir "settings.json") -Raw
-
-          if ($Content -notmatch '"other-server"') {
-            Write-Error "FAIL: other-server was clobbered"
-            exit 1
-          }
-          if ($Content -notmatch '"plane"') {
-            Write-Error "FAIL: plane server not added"
-            exit 1
-          }
-          if ($Content -notmatch '"customKey"') {
-            Write-Error "FAIL: customKey was clobbered"
-            exit 1
-          }
-          Write-Host "PASS: --with-mcp merges existing settings"
 
       - name: "Test: checksum tamper detection"
         shell: pwsh
@@ -340,29 +352,35 @@ jobs:
       - name: "Test: idempotent reinstall"
         shell: pwsh
         run: |
-          $TestHome = Join-Path $env:TEMP "plane-test-idempotent-$(Get-Random)"
-          New-Item -ItemType Directory $TestHome -Force | Out-Null
-          $InstallDir = Join-Path $env:TEMP "plane-test-idempotent-install"
+          $ClaudeDir = Join-Path $HOME ".claude"
+          $SettingsFile = Join-Path $ClaudeDir "settings.json"
+          $InstallDir = Join-Path $env:TEMP "plane-test-idempotent-$(Get-Random)"
 
-          $OrigHome = $HOME
-          $global:HOME = $TestHome
+          # Backup any real settings
+          $HadSettings = Test-Path $SettingsFile
+          if ($HadSettings) { Copy-Item $SettingsFile "$SettingsFile.bak" }
+          if (Test-Path $SettingsFile) { Remove-Item $SettingsFile }
 
           try {
             & .\install.ps1 -InstallDir $InstallDir -WithMcp
             & .\install.ps1 -InstallDir $InstallDir -WithMcp
+
+            $BinaryPath = Join-Path $InstallDir "plane.exe"
+            if (-not (Test-Path $BinaryPath)) {
+              Write-Error "FAIL: binary not found after reinstall"
+              exit 1
+            }
+
+            if (-not (Test-Path $SettingsFile)) {
+              Write-Error "FAIL: settings.json missing after reinstall"
+              exit 1
+            }
+            Write-Host "PASS: idempotent reinstall"
           } finally {
-            $global:HOME = $OrigHome
+            if ($HadSettings) {
+              Copy-Item "$SettingsFile.bak" $SettingsFile -Force
+              Remove-Item "$SettingsFile.bak"
+            } elseif (Test-Path $SettingsFile) {
+              Remove-Item $SettingsFile
+            }
           }
-
-          $BinaryPath = Join-Path $InstallDir "plane.exe"
-          if (-not (Test-Path $BinaryPath)) {
-            Write-Error "FAIL: binary not found after reinstall"
-            exit 1
-          }
-
-          $SettingsFile = Join-Path $TestHome ".claude" "settings.json"
-          if (-not (Test-Path $SettingsFile)) {
-            Write-Error "FAIL: settings.json missing after reinstall"
-            exit 1
-          }
-          Write-Host "PASS: idempotent reinstall"
