@@ -1,0 +1,361 @@
+name: Test Installers
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "install.sh"
+      - "install.ps1"
+      - ".github/workflows/test-installers.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "install.sh"
+      - "install.ps1"
+      - ".github/workflows/test-installers.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  lint-sh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: shellcheck --shell=sh --severity=warning install.sh
+
+  lint-ps1:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
+          $results = Invoke-ScriptAnalyzer -Path install.ps1 -Severity Warning,Error
+          if ($results) {
+            $results | Format-Table -AutoSize
+            exit 1
+          }
+          Write-Host "PSScriptAnalyzer: no warnings or errors found."
+
+  test-sh:
+    needs: lint-sh
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      PLANE_RELEASE_API_URL: "http://localhost:8080/release.json"
+      PLANE_DOWNLOAD_BASE_URL: "http://localhost:8080"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build mock release artifacts
+        run: |
+          mkdir -p mock
+
+          # Create fake binary
+          printf '#!/bin/sh\necho "plane v0.1.0"\n' > mock/plane
+          chmod +x mock/plane
+
+          # Detect platform for archive naming
+          case "$(uname -s)" in
+            Linux*)  MOCK_OS=linux ;;
+            Darwin*) MOCK_OS=darwin ;;
+          esac
+          case "$(uname -m)" in
+            x86_64|amd64)  MOCK_ARCH=amd64 ;;
+            aarch64|arm64) MOCK_ARCH=arm64 ;;
+          esac
+
+          ARCHIVE="plane_0.1.0_${MOCK_OS}_${MOCK_ARCH}.tar.gz"
+          tar -czf "mock/${ARCHIVE}" -C mock plane
+
+          # Generate checksums
+          cd mock
+          if command -v sha256sum > /dev/null 2>&1; then
+            sha256sum "$ARCHIVE" > checksums.txt
+          else
+            shasum -a 256 "$ARCHIVE" > checksums.txt
+          fi
+          cd ..
+
+          # Create release API JSON response
+          printf '{"tag_name":"v0.1.0"}\n' > mock/release.json
+
+      - name: Start mock server
+        run: |
+          python3 -m http.server 8080 -d mock &
+          sleep 1
+          curl -sf http://localhost:8080/release.json > /dev/null
+
+      - name: "Test: basic install"
+        run: |
+          TEST_HOME="$(mktemp -d)"
+          INSTALL_PREFIX="$(mktemp -d)/bin"
+
+          HOME="$TEST_HOME" sh install.sh --prefix "$INSTALL_PREFIX"
+
+          test -x "$INSTALL_PREFIX/plane" || { echo "FAIL: binary not executable"; exit 1; }
+          echo "PASS: basic install"
+
+      - name: "Test: PATH warning when not in PATH"
+        run: |
+          TEST_HOME="$(mktemp -d)"
+          INSTALL_PREFIX="$(mktemp -d)/not-in-path"
+
+          output=$(HOME="$TEST_HOME" sh install.sh --prefix "$INSTALL_PREFIX" 2>&1)
+
+          echo "$output" | grep -q "not in your PATH" || { echo "FAIL: no PATH warning"; exit 1; }
+          echo "PASS: PATH warning"
+
+      - name: "Test: --with-mcp creates new settings.json"
+        run: |
+          TEST_HOME="$(mktemp -d)"
+          INSTALL_PREFIX="$(mktemp -d)/bin"
+
+          HOME="$TEST_HOME" sh install.sh --prefix "$INSTALL_PREFIX" --with-mcp
+
+          test -f "$TEST_HOME/.claude/settings.json" || { echo "FAIL: settings.json not created"; exit 1; }
+          grep -q '"plane"' "$TEST_HOME/.claude/settings.json" || { echo "FAIL: plane server missing"; exit 1; }
+          grep -q '"mcp"' "$TEST_HOME/.claude/settings.json" || grep -q '"--quiet"' "$TEST_HOME/.claude/settings.json" || { echo "FAIL: mcp args missing"; exit 1; }
+          echo "PASS: --with-mcp creates settings.json"
+
+      - name: "Test: --with-mcp merges existing settings"
+        run: |
+          TEST_HOME="$(mktemp -d)"
+          INSTALL_PREFIX="$(mktemp -d)/bin"
+
+          mkdir -p "$TEST_HOME/.claude"
+          cat > "$TEST_HOME/.claude/settings.json" <<'EOF'
+          {
+            "mcpServers": {
+              "other-server": {
+                "command": "other",
+                "args": ["--flag"]
+              }
+            },
+            "customKey": true
+          }
+          EOF
+
+          HOME="$TEST_HOME" sh install.sh --prefix "$INSTALL_PREFIX" --with-mcp
+
+          grep -q '"other-server"' "$TEST_HOME/.claude/settings.json" || { echo "FAIL: other-server clobbered"; exit 1; }
+          grep -q '"plane"' "$TEST_HOME/.claude/settings.json" || { echo "FAIL: plane server not added"; exit 1; }
+          grep -q '"customKey"' "$TEST_HOME/.claude/settings.json" || { echo "FAIL: customKey clobbered"; exit 1; }
+          echo "PASS: --with-mcp merges existing settings"
+
+      - name: "Test: checksum tamper detection"
+        run: |
+          TEST_HOME="$(mktemp -d)"
+          INSTALL_PREFIX="$(mktemp -d)/bin"
+
+          # Corrupt checksums.txt
+          cp mock/checksums.txt mock/checksums.txt.bak
+          echo "0000000000000000000000000000000000000000000000000000000000000000  fake_archive.tar.gz" > mock/checksums.txt
+
+          if HOME="$TEST_HOME" sh install.sh --prefix "$INSTALL_PREFIX" 2>&1; then
+            mv mock/checksums.txt.bak mock/checksums.txt
+            echo "FAIL: installer should have failed on bad checksum"
+            exit 1
+          fi
+
+          mv mock/checksums.txt.bak mock/checksums.txt
+          echo "PASS: checksum tamper detection"
+
+      - name: "Test: idempotent reinstall"
+        run: |
+          TEST_HOME="$(mktemp -d)"
+          INSTALL_PREFIX="$(mktemp -d)/bin"
+
+          for i in 1 2; do
+            HOME="$TEST_HOME" sh install.sh --prefix "$INSTALL_PREFIX" --with-mcp
+          done
+
+          test -x "$INSTALL_PREFIX/plane" || { echo "FAIL: binary not executable after reinstall"; exit 1; }
+          test -f "$TEST_HOME/.claude/settings.json" || { echo "FAIL: settings.json missing after reinstall"; exit 1; }
+          echo "PASS: idempotent reinstall"
+
+  test-ps1:
+    needs: lint-ps1
+    runs-on: windows-latest
+    env:
+      PLANE_RELEASE_API_URL: "http://localhost:8080/release.json"
+      PLANE_DOWNLOAD_BASE_URL: "http://localhost:8080"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build mock release artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory mock -Force | Out-Null
+
+          # Create fake binary
+          Set-Content (Join-Path mock "plane.exe") "fake binary content"
+
+          # Create zip archive
+          $ZipName = "plane_0.1.0_windows_amd64.zip"
+          Compress-Archive -Path (Join-Path mock "plane.exe") -DestinationPath (Join-Path mock $ZipName) -Force
+
+          # Generate checksums
+          $Hash = (Get-FileHash (Join-Path mock $ZipName) -Algorithm SHA256).Hash.ToLower()
+          Set-Content (Join-Path mock "checksums.txt") "$Hash  $ZipName"
+
+          # Create release API JSON response
+          Set-Content (Join-Path mock "release.json") '{"tag_name":"v0.1.0"}'
+
+      - name: Start mock server
+        shell: pwsh
+        run: |
+          Start-Process -FilePath python -ArgumentList "-m","http.server","8080","-d","mock" -WindowStyle Hidden
+          Start-Sleep -Seconds 2
+          Invoke-WebRequest -Uri http://localhost:8080/release.json -UseBasicParsing | Out-Null
+
+      - name: "Test: basic install"
+        shell: pwsh
+        run: |
+          $InstallDir = Join-Path $env:TEMP "plane-test-basic"
+
+          & .\install.ps1 -InstallDir $InstallDir
+
+          $BinaryPath = Join-Path $InstallDir "plane.exe"
+          if (-not (Test-Path $BinaryPath)) {
+            Write-Error "FAIL: binary not found at $BinaryPath"
+            exit 1
+          }
+          Write-Host "PASS: basic install"
+
+      - name: "Test: --with-mcp creates new settings.json"
+        shell: pwsh
+        run: |
+          $TestHome = Join-Path $env:TEMP "plane-test-mcp-$(Get-Random)"
+          New-Item -ItemType Directory $TestHome -Force | Out-Null
+          $InstallDir = Join-Path $env:TEMP "plane-test-mcp-install"
+
+          # Override HOME so the script writes to our test directory
+          $OrigHome = $HOME
+          $global:HOME = $TestHome
+
+          try {
+            & .\install.ps1 -InstallDir $InstallDir -WithMcp
+          } finally {
+            $global:HOME = $OrigHome
+          }
+
+          $SettingsFile = Join-Path $TestHome ".claude" "settings.json"
+          if (-not (Test-Path $SettingsFile)) {
+            Write-Error "FAIL: settings.json not created at $SettingsFile"
+            exit 1
+          }
+
+          $Content = Get-Content $SettingsFile -Raw
+          if ($Content -notmatch '"plane"') {
+            Write-Error "FAIL: plane server missing from settings.json"
+            exit 1
+          }
+          Write-Host "PASS: --with-mcp creates settings.json"
+
+      - name: "Test: --with-mcp merges existing settings"
+        shell: pwsh
+        run: |
+          $TestHome = Join-Path $env:TEMP "plane-test-merge-$(Get-Random)"
+          $ClaudeDir = Join-Path $TestHome ".claude"
+          New-Item -ItemType Directory $ClaudeDir -Force | Out-Null
+          $InstallDir = Join-Path $env:TEMP "plane-test-merge-install"
+
+          # Pre-create settings.json with another server
+          $ExistingSettings = @'
+          {
+            "mcpServers": {
+              "other-server": {
+                "command": "other",
+                "args": ["--flag"]
+              }
+            },
+            "customKey": true
+          }
+          '@
+          Set-Content (Join-Path $ClaudeDir "settings.json") $ExistingSettings
+
+          $OrigHome = $HOME
+          $global:HOME = $TestHome
+
+          try {
+            & .\install.ps1 -InstallDir $InstallDir -WithMcp
+          } finally {
+            $global:HOME = $OrigHome
+          }
+
+          $Content = Get-Content (Join-Path $ClaudeDir "settings.json") -Raw
+
+          if ($Content -notmatch '"other-server"') {
+            Write-Error "FAIL: other-server was clobbered"
+            exit 1
+          }
+          if ($Content -notmatch '"plane"') {
+            Write-Error "FAIL: plane server not added"
+            exit 1
+          }
+          if ($Content -notmatch '"customKey"') {
+            Write-Error "FAIL: customKey was clobbered"
+            exit 1
+          }
+          Write-Host "PASS: --with-mcp merges existing settings"
+
+      - name: "Test: checksum tamper detection"
+        shell: pwsh
+        run: |
+          $InstallDir = Join-Path $env:TEMP "plane-test-tamper"
+
+          # Corrupt checksums.txt
+          Copy-Item mock/checksums.txt mock/checksums.txt.bak
+          Set-Content mock/checksums.txt "0000000000000000000000000000000000000000000000000000000000000000  fake_archive.zip"
+
+          # Run installer — expected to fail (exit 1 sets $LASTEXITCODE, not a catchable exception)
+          & .\install.ps1 -InstallDir $InstallDir
+          $InstallerExitCode = $LASTEXITCODE
+
+          # Restore checksums
+          Copy-Item mock/checksums.txt.bak mock/checksums.txt -Force
+
+          if ($InstallerExitCode -eq 0) {
+            Write-Error "FAIL: installer should have failed on bad checksum"
+            exit 1
+          }
+
+          # Reset so the step passes (GitHub Actions checks $LASTEXITCODE at step end)
+          $global:LASTEXITCODE = 0
+          Write-Host "PASS: checksum tamper detection"
+
+      - name: "Test: idempotent reinstall"
+        shell: pwsh
+        run: |
+          $TestHome = Join-Path $env:TEMP "plane-test-idempotent-$(Get-Random)"
+          New-Item -ItemType Directory $TestHome -Force | Out-Null
+          $InstallDir = Join-Path $env:TEMP "plane-test-idempotent-install"
+
+          $OrigHome = $HOME
+          $global:HOME = $TestHome
+
+          try {
+            & .\install.ps1 -InstallDir $InstallDir -WithMcp
+            & .\install.ps1 -InstallDir $InstallDir -WithMcp
+          } finally {
+            $global:HOME = $OrigHome
+          }
+
+          $BinaryPath = Join-Path $InstallDir "plane.exe"
+          if (-not (Test-Path $BinaryPath)) {
+            Write-Error "FAIL: binary not found after reinstall"
+            exit 1
+          }
+
+          $SettingsFile = Join-Path $TestHome ".claude" "settings.json"
+          if (-not (Test-Path $SettingsFile)) {
+            Write-Error "FAIL: settings.json missing after reinstall"
+            exit 1
+          }
+          Write-Host "PASS: idempotent reinstall"
