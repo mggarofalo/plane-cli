@@ -153,17 +153,19 @@ jobs:
           TEST_HOME="$(mktemp -d)"
           INSTALL_PREFIX="$(mktemp -d)/bin"
 
-          # Corrupt checksums.txt
-          cp mock/checksums.txt mock/checksums.txt.bak
-          echo "0000000000000000000000000000000000000000000000000000000000000000  fake_archive.tar.gz" > mock/checksums.txt
+          # Corrupt the archive (not checksums.txt) so the installer hits the
+          # hash-mismatch code path, not just the "archive not found" guard.
+          ARCHIVE=$(ls mock/*.tar.gz)
+          cp "$ARCHIVE" "${ARCHIVE}.bak"
+          echo 'tampered' >> "$ARCHIVE"
 
           if HOME="$TEST_HOME" sh install.sh --prefix "$INSTALL_PREFIX" 2>&1; then
-            mv mock/checksums.txt.bak mock/checksums.txt
+            mv "${ARCHIVE}.bak" "$ARCHIVE"
             echo "FAIL: installer should have failed on bad checksum"
             exit 1
           fi
 
-          mv mock/checksums.txt.bak mock/checksums.txt
+          mv "${ARCHIVE}.bak" "$ARCHIVE"
           echo "PASS: checksum tamper detection"
 
       - name: "Test: idempotent reinstall"
@@ -308,18 +310,20 @@ jobs:
       - name: "Test: checksum tamper detection"
         shell: pwsh
         run: |
-          $InstallDir = Join-Path $env:TEMP "plane-test-tamper"
+          $InstallDir = Join-Path $env:TEMP "plane-test-tamper-$(Get-Random)"
 
-          # Corrupt checksums.txt
-          Copy-Item mock/checksums.txt mock/checksums.txt.bak
-          Set-Content mock/checksums.txt "0000000000000000000000000000000000000000000000000000000000000000  fake_archive.zip"
+          # Corrupt the archive (not checksums.txt) so the installer hits the
+          # hash-mismatch code path, not just the "archive not found" guard.
+          $ZipName = "plane_0.1.0_windows_amd64.zip"
+          Copy-Item "mock/$ZipName" "mock/${ZipName}.bak"
+          Add-Content "mock/$ZipName" "tampered"
 
           # Run installer — expected to fail (exit 1 sets $LASTEXITCODE, not a catchable exception)
           & .\install.ps1 -InstallDir $InstallDir
           $InstallerExitCode = $LASTEXITCODE
 
-          # Restore checksums
-          Copy-Item mock/checksums.txt.bak mock/checksums.txt -Force
+          # Restore archive
+          Copy-Item "mock/${ZipName}.bak" "mock/$ZipName" -Force
 
           if ($InstallerExitCode -eq 0) {
             Write-Error "FAIL: installer should have failed on bad checksum"
