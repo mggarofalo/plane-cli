@@ -1,0 +1,29 @@
+# Plane CLI Resource Reference
+
+Auto-generated on {{ .Generated }}.
+{{ range $topic := .Topics }}
+## {{ $topic.DisplayName }}
+{{ range $topic.Actions }}
+### `plane {{ $topic.Name }} {{ .CLIName }}`
+
+MCP tool: `plane_{{ .MCPName }}`
+{{ if .HasSpec }}
+**{{ .Method }}** `{{ .Path }}`
+{{ if .Params }}
+| Flag | Type | Required | Notes |
+|------|------|----------|-------|
+{{- range .Params }}
+| `--{{ .FlagName }}` | {{ .Type }} | {{ if .Required }}yes{{ else }}no{{ end }} |{{ if .Resolvable }} accepts name or UUID{{ end }}{{ if .IssueRef }} accepts UUID or sequence ID (e.g. PROJ-42){{ end }}{{ if .Enum }} enum: {{ join .Enum ", " }}{{ end }} |
+{{- end }}
+{{ end }}
+{{- else }}
+*No cached spec available. Run `plane docs update-specs` to populate.*
+{{ end }}
+{{- end }}
+{{- if $topic.HasEnsure }}
+
+### `plane {{ $topic.Name }} ensure`
+
+Idempotent create-or-update by name. Accepts the same flags as create/update.
+{{- end }}
+{{ end }}

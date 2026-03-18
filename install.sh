@@ -297,6 +297,12 @@ export PATH="${INSTALL_DIR}:${PATH}"
 if command -v plane > /dev/null 2>&1; then
     info "Initializing API spec cache..."
     plane docs update-specs 2>/dev/null || info "Spec cache initialization skipped (authentication may be required)."
+
+    # Generate Claude Code skill from cached specs
+    SKILL_DIR="${HOME}/.claude/skills/plane"
+    info "Generating Claude Code skill in ${SKILL_DIR}..."
+    mkdir -p "$SKILL_DIR"
+    plane skills generate --output "$SKILL_DIR" 2>/dev/null || info "Skill generation skipped."
 else
     info "Skipping spec cache initialization (binary not in PATH for this session)."
 fi

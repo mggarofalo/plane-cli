@@ -227,6 +227,16 @@ try {
         } catch {
             Write-Info 'Spec cache initialization skipped (authentication may be required).'
         }
+
+        # Generate Claude Code skill from cached specs
+        $SkillDir = Join-Path $HOME '.claude' 'skills' 'plane'
+        Write-Info "Generating Claude Code skill in $SkillDir..."
+        New-Item -ItemType Directory -Path $SkillDir -Force | Out-Null
+        try {
+            & plane skills generate --output $SkillDir 2>$null
+        } catch {
+            Write-Info 'Skill generation skipped.'
+        }
     } else {
         Write-Info 'Skipping spec cache initialization (restart your terminal and run: plane docs update-specs).'
     }
