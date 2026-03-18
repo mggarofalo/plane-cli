@@ -145,39 +145,19 @@ Useful for:
 - Refreshing after Plane releases new API features
 - CI/Docker image builds`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		registry, err := buildRegistry(cmd.Context())
-		if err != nil {
-			return err
-		}
-
 		cfg, err := auth.LoadConfig()
 		if err != nil {
 			return err
 		}
 		profile := cfg.ActiveProfile
-		baseURL := registry.BaseURL
 
-		// Collect all entries to fetch
-		type work struct {
-			topicName string
-			entry     docs.Entry
-		}
-		var entries []work
-		for _, topic := range registry.Topics() {
-			if !cmdgen.FilteredTopicName(topic.Name) {
-				continue
-			}
-			for _, entry := range topic.Entries {
-				if !cmdgen.IsAPIReferenceURL(entry.URL) {
-					continue
-				}
-				cmdName := cmdgen.DeriveSubcommandName(entry.Title, topic.Name)
-				if cmdName == "" {
-					continue
-				}
-				entries = append(entries, work{topicName: topic.Name, entry: entry})
-			}
-		}
+		resolver := &auth.Resolver{Config: cfg}
+		baseURL := resolver.ResolveDocsURL(flagDocsURL)
+
+		// Collect all entries to fetch — iterate over DefaultTopics (the
+		// same source skills-generate uses) instead of the llms.txt cache
+		// which only has high-level overview entries.
+		entries := collectSpecEntries(docs.DefaultTopics)
 
 		if !flagQuiet {
 			fmt.Fprintf(os.Stderr, "Fetching specs for %d endpoints...\n", len(entries))
@@ -186,7 +166,7 @@ Useful for:
 		// Bounded concurrent fetching
 		const workers = 8
 		var wg sync.WaitGroup
-		ch := make(chan work, len(entries))
+		ch := make(chan specWork, len(entries))
 		var successCount int64
 		var failCount int64
 
@@ -405,6 +385,36 @@ func formatSize(bytes int64) string {
 	default:
 		return fmt.Sprintf("%.1fMB", float64(bytes)/(1024*1024))
 	}
+}
+
+// specWork pairs a topic name with an entry for concurrent spec fetching.
+type specWork struct {
+	topicName string
+	entry     docs.Entry
+}
+
+// collectSpecEntries filters topics and entries into a flat list of specWork
+// items suitable for concurrent fetching. It applies the same filtering rules
+// used by skills-generate: skip overridden topics, non-API-reference URLs, and
+// entries that don't produce a subcommand name.
+func collectSpecEntries(topics []docs.Topic) []specWork {
+	var entries []specWork
+	for _, topic := range topics {
+		if !cmdgen.FilteredTopicName(topic.Name) {
+			continue
+		}
+		for _, entry := range topic.Entries {
+			if !cmdgen.IsAPIReferenceURL(entry.URL) {
+				continue
+			}
+			cmdName := cmdgen.DeriveSubcommandName(entry.Title, topic.Name)
+			if cmdName == "" {
+				continue
+			}
+			entries = append(entries, specWork{topicName: topic.Name, entry: entry})
+		}
+	}
+	return entries
 }
 
 func buildRegistry(ctx context.Context) (*docs.DocsRegistry, error) {
