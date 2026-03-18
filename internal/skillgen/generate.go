@@ -102,6 +102,7 @@ func executeTemplate(tmpl *template.Template, name, path string, data *SkillData
 
 	if err := tmpl.ExecuteTemplate(f, name, data); err != nil {
 		_ = f.Close()
+		_ = os.Remove(path)
 		return err
 	}
 	return f.Close()

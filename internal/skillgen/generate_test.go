@@ -76,7 +76,7 @@ func TestGenerate_WithSpecs(t *testing.T) {
 	resChecks := []string{
 		"## Label",
 		"`plane label create`",
-		"plane_label_create",
+		"label_create",
 		"POST",
 		"| `--name` | string | yes |",
 		"| `--color` | string | no |",

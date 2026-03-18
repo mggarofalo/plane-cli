@@ -6,7 +6,7 @@ Auto-generated on {{ .Generated }}.
 {{ range $topic.Actions }}
 ### `plane {{ $topic.Name }} {{ .CLIName }}`
 
-MCP tool: `plane_{{ .MCPName }}`
+MCP tool: `{{ .MCPName }}`
 {{ if .HasSpec }}
 **{{ .Method }}** `{{ .Path }}`
 {{ if .Params }}
