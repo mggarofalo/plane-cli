@@ -1,7 +1,34 @@
 package docs
 
+import "strings"
+
 // DefaultBaseURL is the default docs URL used when no custom URL is configured.
 const DefaultBaseURL = "https://developers.plane.so"
+
+// RebaseTopics returns a deep copy of DefaultTopics with all entry URLs
+// rewritten from DefaultBaseURL to the given base URL. If baseURL equals
+// DefaultBaseURL (or is empty), it returns DefaultTopics directly.
+func RebaseTopics(baseURL string) []Topic {
+	if baseURL == "" || baseURL == DefaultBaseURL {
+		return DefaultTopics
+	}
+	out := make([]Topic, len(DefaultTopics))
+	for i, t := range DefaultTopics {
+		entries := make([]Entry, len(t.Entries))
+		for j, e := range t.Entries {
+			entries[j] = Entry{
+				Title:       e.Title,
+				URL:         strings.Replace(e.URL, DefaultBaseURL, baseURL, 1),
+				Description: e.Description,
+			}
+		}
+		out[i] = Topic{
+			Name:    t.Name,
+			Entries: entries,
+		}
+	}
+	return out
+}
 
 // DefaultTopics contains the hardcoded doc entries used as a fallback when
 // the remote llms.txt cannot be fetched and no cache exists.

@@ -55,8 +55,8 @@ func (r *DocsRegistry) Load(ctx context.Context) error {
 		return nil
 	}
 
-	// 3. Fall back to defaults
-	r.topics = DefaultTopics
+	// 3. Fall back to defaults (rebased to the configured base URL)
+	r.topics = RebaseTopics(r.BaseURL)
 	if !r.Quiet {
 		fmt.Fprintf(os.Stderr, "hint: using built-in defaults. Run 'plane docs update' to fetch latest docs index.\n")
 	}
