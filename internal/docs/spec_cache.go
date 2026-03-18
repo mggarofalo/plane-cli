@@ -139,6 +139,65 @@ func ListCachedTopics(profile string) ([]string, error) {
 	return topics, nil
 }
 
+// SpecFileInfo holds lightweight metadata about a single cached spec file.
+type SpecFileInfo struct {
+	FileName  string    `json:"file_name"`
+	Size      int64     `json:"size"`
+	FetchedAt time.Time `json:"fetched_at"`
+}
+
+// ListTopicSpecFiles returns file-level metadata for all cached specs in a topic.
+// Unlike LoadTopicSpecs, it only reads enough of each file to extract the
+// fetched_at timestamp and uses os.Stat for the file size.
+func ListTopicSpecFiles(profile, topicName string) ([]SpecFileInfo, error) {
+	dir, err := SpecCacheDir(profile)
+	if err != nil {
+		return nil, err
+	}
+
+	topicDir := filepath.Join(dir, topicName)
+	entries, err := os.ReadDir(topicDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var files []SpecFileInfo
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+
+		// Read just enough to extract fetched_at
+		data, err := os.ReadFile(filepath.Join(topicDir, e.Name()))
+		if err != nil {
+			continue
+		}
+
+		var envelope struct {
+			FetchedAt time.Time `json:"fetched_at"`
+		}
+		if err := json.Unmarshal(data, &envelope); err != nil {
+			continue
+		}
+
+		files = append(files, SpecFileInfo{
+			FileName:  e.Name(),
+			Size:      info.Size(),
+			FetchedAt: envelope.FetchedAt,
+		})
+	}
+
+	return files, nil
+}
+
 // SpecFileName derives a cache file name from an entry title.
 // Exported so callers can look up specs by entry title.
 func SpecFileName(entryTitle string) string {

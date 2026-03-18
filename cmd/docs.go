@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/mggarofalo/plane-cli/internal/auth"
 	"github.com/mggarofalo/plane-cli/internal/cmdgen"
@@ -17,10 +19,20 @@ import (
 
 var flagDocsURL string
 
+// specTopicSummary holds aggregated info about cached specs for a single topic.
+type specTopicSummary struct {
+	Name    string              `json:"name"`
+	Files   []docs.SpecFileInfo `json:"files"`
+	Oldest  time.Time           `json:"oldest"`
+	Newest  time.Time           `json:"newest"`
+	IsStale bool                `json:"is_stale"`
+}
+
 func init() {
 	rootCmd.AddCommand(docsCmd)
 	docsCmd.AddCommand(docsUpdateCmd)
 	docsCmd.AddCommand(docsUpdateSpecsCmd)
+	docsCmd.AddCommand(docsListSpecsCmd)
 
 	docsCmd.PersistentFlags().StringVar(&flagDocsURL, "docs-url", "", "Docs base URL (default: profile or "+docs.DefaultBaseURL+")")
 	docsCmd.Flags().Bool("list", false, "List all topics")
@@ -44,6 +56,7 @@ Run 'plane docs update' to refresh the cache.`,
   plane docs api-reference       # List all API reference entries
   plane docs update              # Refresh docs index from remote
   plane docs update-specs        # Pre-warm endpoint spec cache
+  plane docs list-specs          # Show cached endpoint specs
   plane docs --url https://developers.plane.so/api-reference/issue/overview`,
 	Args: cobra.MaximumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -218,6 +231,180 @@ Useful for:
 		}
 		return nil
 	},
+}
+
+var docsListSpecsCmd = &cobra.Command{
+	Use:   "list-specs",
+	Short: "List cached endpoint specs with freshness info",
+	Long: `Shows which endpoint specs are currently cached, grouped by topic.
+
+Displays file count, staleness, and total coverage so you can verify
+cache state when debugging update-specs or skills generate issues.
+
+Use --output json for machine-readable output.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := auth.LoadConfig()
+		if err != nil {
+			return err
+		}
+		profile := cfg.ActiveProfile
+
+		topics, err := docs.ListCachedTopics(profile)
+		if err != nil {
+			return fmt.Errorf("listing cached topics: %w", err)
+		}
+
+		if len(topics) == 0 {
+			fmt.Fprintln(os.Stderr, "No cached specs found. Run 'plane docs update-specs' to populate.")
+			return nil
+		}
+
+		sort.Strings(topics)
+
+		// Build per-topic info
+		var topicInfos []specTopicSummary
+		var totalSpecs int
+
+		for _, topicName := range topics {
+			files, err := docs.ListTopicSpecFiles(profile, topicName)
+			if err != nil || len(files) == 0 {
+				continue
+			}
+
+			sort.Slice(files, func(i, j int) bool {
+				return files[i].FileName < files[j].FileName
+			})
+
+			oldest := files[0].FetchedAt
+			newest := files[0].FetchedAt
+			for _, f := range files[1:] {
+				if f.FetchedAt.Before(oldest) {
+					oldest = f.FetchedAt
+				}
+				if f.FetchedAt.After(newest) {
+					newest = f.FetchedAt
+				}
+			}
+
+			totalSpecs += len(files)
+			topicInfos = append(topicInfos, specTopicSummary{
+				Name:    topicName,
+				Files:   files,
+				Oldest:  oldest,
+				Newest:  newest,
+				IsStale: time.Since(oldest) > 24*time.Hour,
+			})
+		}
+
+		// Count total possible endpoints from the registry (best-effort)
+		var totalEndpoints int
+		registry, regErr := buildRegistry(cmd.Context())
+		if regErr == nil {
+			for _, topic := range registry.Topics() {
+				if !cmdgen.FilteredTopicName(topic.Name) {
+					continue
+				}
+				for _, entry := range topic.Entries {
+					if !cmdgen.IsAPIReferenceURL(entry.URL) {
+						continue
+					}
+					if cmdgen.DeriveSubcommandName(entry.Title, topic.Name) != "" {
+						totalEndpoints++
+					}
+				}
+			}
+		}
+
+		if flagOutput == "json" {
+			return printListSpecsJSON(topicInfos, totalSpecs, totalEndpoints)
+		}
+
+		return printListSpecsTable(profile, topicInfos, totalSpecs, totalEndpoints)
+	},
+}
+
+func printListSpecsTable(profile string, topics []specTopicSummary, totalSpecs, totalEndpoints int) error {
+	fmt.Printf("Cached endpoint specs (profile: %s)\n\n", profile)
+
+	for _, t := range topics {
+		fmt.Printf("  %-20s %d specs  (oldest: %s)\n", t.Name+"/", len(t.Files), formatAge(t.Oldest))
+		for _, f := range t.Files {
+			fmt.Printf("    %-36s %s  %s\n", f.FileName, f.FetchedAt.Format("2006-01-02"), formatSize(f.Size))
+		}
+	}
+
+	fmt.Printf("\nTotal: %d specs across %d topics\n", totalSpecs, len(topics))
+	if totalEndpoints > 0 {
+		missing := totalEndpoints - totalSpecs
+		if missing > 0 {
+			fmt.Printf("Missing: %d endpoints (run 'plane docs update-specs' to populate)\n", missing)
+		} else {
+			fmt.Println("All endpoints cached.")
+		}
+	}
+
+	return nil
+}
+
+func printListSpecsJSON(topics []specTopicSummary, totalSpecs, totalEndpoints int) error {
+	result := struct {
+		Topics         interface{} `json:"topics"`
+		TotalSpecs     int         `json:"total_specs"`
+		TotalEndpoints int         `json:"total_endpoints,omitempty"`
+		MissingCount   int         `json:"missing_count,omitempty"`
+	}{
+		Topics:         topics,
+		TotalSpecs:     totalSpecs,
+		TotalEndpoints: totalEndpoints,
+	}
+	if totalEndpoints > 0 {
+		missing := totalEndpoints - totalSpecs
+		if missing > 0 {
+			result.MissingCount = missing
+		}
+	}
+
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	enc.SetEscapeHTML(false)
+	return enc.Encode(result)
+}
+
+func formatAge(t time.Time) string {
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		m := int(d.Minutes())
+		if m == 1 {
+			return "1m ago"
+		}
+		return fmt.Sprintf("%dm ago", m)
+	case d < 24*time.Hour:
+		h := int(d.Hours())
+		if h == 1 {
+			return "1h ago"
+		}
+		return fmt.Sprintf("%dh ago", h)
+	default:
+		days := int(d.Hours() / 24)
+		if days == 1 {
+			return "1d ago"
+		}
+		return fmt.Sprintf("%dd ago", days)
+	}
+}
+
+func formatSize(bytes int64) string {
+	switch {
+	case bytes < 1024:
+		return fmt.Sprintf("%dB", bytes)
+	case bytes < 1024*1024:
+		return fmt.Sprintf("%.1fKB", float64(bytes)/1024)
+	default:
+		return fmt.Sprintf("%.1fMB", float64(bytes)/(1024*1024))
+	}
 }
 
 func buildRegistry(ctx context.Context) (*docs.DocsRegistry, error) {
