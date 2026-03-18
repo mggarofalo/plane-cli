@@ -9,30 +9,27 @@
 
     This script is idempotent and safe to re-run for upgrades.
 
-.PARAMETER WithMcp
-    Configure the Plane MCP server in ~/.claude/settings.json.
-
-.PARAMETER InstallDir
-    Install to a custom directory instead of $env:LOCALAPPDATA\plane-cli.
-
 .EXAMPLE
     # Basic install
     irm https://raw.githubusercontent.com/mggarofalo/plane-cli/main/install.ps1 | iex
 
     # Install with MCP setup
-    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/mggarofalo/plane-cli/main/install.ps1))) -WithMcp
+    $env:PLANE_WITH_MCP = '1'; irm https://raw.githubusercontent.com/mggarofalo/plane-cli/main/install.ps1 | iex
+
+    # Install to custom directory
+    $env:PLANE_INSTALL_DIR = 'C:\tools\plane'; irm https://raw.githubusercontent.com/mggarofalo/plane-cli/main/install.ps1 | iex
 
 .LINK
     https://github.com/mggarofalo/plane-cli
 #>
 
-[CmdletBinding()]
-param(
-    [switch]$WithMcp,
-    [string]$InstallDir
-)
+# Wrap in a function to avoid irm | iex pipeline issues with param() blocks.
+function Install-PlaneCli {
 
 $ErrorActionPreference = 'Stop'
+
+$WithMcp = $env:PLANE_WITH_MCP -eq '1'
+$InstallDir = $env:PLANE_INSTALL_DIR
 
 $Repo = 'mggarofalo/plane-cli'
 $BinaryName = 'plane.exe'
@@ -259,3 +256,7 @@ try {
         Remove-Item -Path $TmpDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
+
+} # end Install-PlaneCli
+
+Install-PlaneCli
