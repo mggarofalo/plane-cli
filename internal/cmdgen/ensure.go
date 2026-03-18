@@ -117,6 +117,16 @@ Returns the resource either way (same output as create/get).`, topicName),
 	// Add --match-field flag
 	cmd.Flags().String(ensureMatchField, "name", "Field to match existing resources on")
 
+	// Pre-scan: when both "description" and "description_html" exist,
+	// the _html variant registers --description (markdown shorthand)
+	// so the plain param must be skipped to avoid a duplicate flag panic.
+	htmlBaseFlags := make(map[string]bool)
+	for _, p := range specs.create.Params {
+		if IsHTMLParam(p.Name) {
+			htmlBaseFlags[MarkdownFlagName(p.Name)] = true
+		}
+	}
+
 	// Register flags from the create spec's params
 	for _, p := range specs.create.Params {
 		if p.Name == "workspace_slug" || p.Name == "project_id" {
@@ -124,6 +134,9 @@ Returns the resource either way (same output as create/get).`, topicName),
 		}
 		flagName := ParamToFlagName(p.Name)
 		if globalFlagNames[flagName] {
+			continue
+		}
+		if htmlBaseFlags[flagName] && !IsHTMLParam(p.Name) {
 			continue
 		}
 		desc := p.Description
