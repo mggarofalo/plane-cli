@@ -57,6 +57,31 @@ func TestRebaseTopics_CustomBaseURL(t *testing.T) {
 	}
 }
 
+func TestRebaseTopics_TrailingSlash(t *testing.T) {
+	// A trailing slash on the custom base URL must not produce double-slash URLs.
+	custom := "https://docs.example.com/"
+	got := RebaseTopics(custom)
+
+	for i, topic := range got {
+		for j, entry := range topic.Entries {
+			if strings.Contains(entry.URL, "//api") {
+				t.Errorf("topic[%d].entry[%d] has double-slash URL: %s", i, j, entry.URL)
+			}
+			if !strings.HasPrefix(entry.URL, "https://docs.example.com/") {
+				t.Errorf("topic[%d].entry[%d] URL doesn't start with expected base: %s", i, j, entry.URL)
+			}
+		}
+	}
+}
+
+func TestRebaseTopics_DefaultBaseURLWithTrailingSlash(t *testing.T) {
+	// DefaultBaseURL with a trailing slash should still return DefaultTopics directly.
+	got := RebaseTopics(DefaultBaseURL + "/")
+	if &got[0] != &DefaultTopics[0] {
+		t.Error("expected same slice when baseURL == DefaultBaseURL with trailing slash")
+	}
+}
+
 func TestRebaseTopics_DoesNotMutateOriginal(t *testing.T) {
 	// Save a sample URL before rebasing
 	origURL := DefaultTopics[0].Entries[0].URL

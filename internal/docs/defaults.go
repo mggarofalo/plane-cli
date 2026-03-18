@@ -12,6 +12,13 @@ func RebaseTopics(baseURL string) []Topic {
 	if baseURL == "" || baseURL == DefaultBaseURL {
 		return DefaultTopics
 	}
+	// Normalize trailing slash to prevent double-slash URLs (e.g.
+	// "https://custom.example.com/" → "https://custom.example.com").
+	// This mirrors the normalization in FetchLLMSTxt.
+	baseURL = strings.TrimRight(baseURL, "/")
+	if baseURL == DefaultBaseURL {
+		return DefaultTopics
+	}
 	out := make([]Topic, len(DefaultTopics))
 	for i, t := range DefaultTopics {
 		entries := make([]Entry, len(t.Entries))
