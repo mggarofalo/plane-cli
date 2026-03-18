@@ -1,0 +1,102 @@
+---
+name: plane
+description: >
+  Plane project management CLI — {{ .Total }} actions across {{ len .Topics }} resource types.
+  Use for creating, listing, updating, and deleting Plane resources. Supports name resolution,
+  batch mode, ensure (idempotent upsert), output extraction, and pagination.
+allowed-tools: Bash, Read
+user_invocable: false
+---
+
+# Plane CLI Reference
+
+Auto-generated on {{ .Generated }}. {{ .Total }} actions across {{ len .Topics }} resource types.
+
+## Quick Start
+
+```bash
+# Create a work item
+plane issue create --name "Fix login bug" --state "In Progress" --priority urgent -w my-workspace -p MY-PROJECT
+
+# List all cycles
+plane cycle list -w my-workspace -p MY-PROJECT
+
+# Idempotent upsert (ensure)
+plane label ensure --name "backend" --color "#00FF00" -w my-workspace -p MY-PROJECT
+
+# Batch create from JSONL
+echo '{"name":"Task 1"}
+{"name":"Task 2"}' | plane issue create --batch -w my-workspace -p MY-PROJECT
+
+# Extract a single field
+plane issue get --work-item-id PROJ-42 --field state_detail.name -w my-workspace -p MY-PROJECT
+```
+
+## Agent Features
+
+### Name Resolution
+Flags that accept UUIDs also accept human-readable names. The CLI resolves names to UUIDs automatically.
+- `--state-id "In Progress"` resolves the state name to its UUID
+- `--label-id backend` resolves the label name to its UUID
+- `--work-item-id PROJ-42` resolves the sequence ID to a UUID
+
+Disable with `--no-resolve` to pass literal values.
+
+### Output Extraction
+- `--field <path>` — extract a single field (supports dotted paths like `state_detail.name`)
+- `--fields <a,b,c>` — extract multiple fields as TSV
+- `--id-only` — print only the resource UUID
+- `--output json` or `--output table` — force output format
+
+### Ensure (Idempotent Upsert)
+Topics that support ensure will create-or-update a resource by name:
+```bash
+plane <topic> ensure --name "value" [--other-flags...]
+```
+If a resource with that name exists, it is updated. Otherwise, it is created.
+
+### Batch Mode
+Read JSONL from stdin; each line becomes a separate API request:
+```bash
+cat items.jsonl | plane <topic> create --batch -w my-workspace -p MY-PROJECT
+```
+
+### Dry Run
+Preview the HTTP request without executing:
+```bash
+plane issue create --name "test" --dry-run -w my-workspace -p MY-PROJECT
+```
+
+### Pagination
+- `--per-page N` — items per page (max 100, default 100)
+- `--cursor <token>` — resume from a pagination cursor
+- `--all` — auto-paginate and return all results
+
+### Global Flags
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--workspace` | `-w` | Workspace slug |
+| `--project` | `-p` | Project ID or identifier |
+| `--output` | `-o` | Output format: json, table |
+| `--verbose` | | Debug HTTP logging |
+| `--quiet` | `-q` | Suppress informational messages |
+| `--dry-run` | `-n` | Preview without executing |
+| `--no-resolve` | | Skip name resolution |
+| `--field` | | Extract single field |
+| `--fields` | | Extract multiple fields as TSV |
+| `--id-only` | | Print only resource UUID |
+| `--batch` | | JSONL batch mode |
+| `--all` | | Auto-paginate all results |
+| `--per-page` | | Items per page |
+| `--stdin` | | Read JSON body from stdin |
+| `--retry` | | Max retries on 429 rate limit |
+
+## Resource Topics
+
+| Topic | Actions | Ensure |
+|-------|---------|--------|
+{{- range .Topics }}
+| {{ .Name }} | {{ len .Actions }} | {{ if .HasEnsure }}yes{{ else }}no{{ end }} |
+{{- end }}
+
+See [references/resources.md](references/resources.md) for full per-action parameter tables.
