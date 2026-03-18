@@ -153,6 +153,9 @@ Useful for:
 
 		resolver := &auth.Resolver{Config: cfg}
 		baseURL := resolver.ResolveDocsURL(flagDocsURL)
+		if baseURL == "" {
+			baseURL = docs.DefaultBaseURL
+		}
 
 		// Collect all entries to fetch — iterate over DefaultTopics (the
 		// same source skills-generate uses) instead of the llms.txt cache
