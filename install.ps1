@@ -223,7 +223,7 @@ try {
     if (Get-Command plane -ErrorAction SilentlyContinue) {
         Write-Info 'Initializing API spec cache...'
         try {
-            & plane docs update-specs 2>$null
+            & plane docs update-specs *>$null
         } catch {
             Write-Info 'Spec cache initialization skipped (authentication may be required).'
         }
@@ -233,7 +233,7 @@ try {
         Write-Info "Generating Claude Code skill in $SkillDir..."
         New-Item -ItemType Directory -Path $SkillDir -Force | Out-Null
         try {
-            & plane skills generate --output $SkillDir 2>$null
+            & plane skills generate --output $SkillDir *>$null
         } catch {
             Write-Info 'Skill generation skipped.'
         }
