@@ -162,6 +162,15 @@ Useful for:
 		// which only has high-level overview entries.
 		entries := collectSpecEntries(docs.DefaultTopics)
 
+		// DefaultTopics entries have URLs hardcoded to DefaultBaseURL.
+		// When a custom docs URL is configured, rewrite each entry's URL
+		// so specs are fetched from the correct endpoint.
+		if baseURL != docs.DefaultBaseURL {
+			for i := range entries {
+				entries[i].entry.URL = strings.Replace(entries[i].entry.URL, docs.DefaultBaseURL, baseURL, 1)
+			}
+		}
+
 		if !flagQuiet {
 			fmt.Fprintf(os.Stderr, "Fetching specs for %d endpoints...\n", len(entries))
 		}

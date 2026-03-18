@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/mggarofalo/plane-cli/internal/docs"
@@ -66,6 +67,48 @@ func TestCollectSpecEntries_EmptyInput(t *testing.T) {
 	entries = collectSpecEntries([]docs.Topic{})
 	if len(entries) != 0 {
 		t.Errorf("collectSpecEntries([]) returned %d entries, want 0", len(entries))
+	}
+}
+
+func TestCollectSpecEntries_CustomBaseURLRewritesEntryURLs(t *testing.T) {
+	customBase := "https://docs.internal.example.com"
+	entries := collectSpecEntries(docs.DefaultTopics)
+
+	if len(entries) == 0 {
+		t.Fatal("collectSpecEntries returned 0 entries; need entries to test URL rewriting")
+	}
+
+	// Apply the same rewriting logic used in docsUpdateSpecsCmd.
+	for i := range entries {
+		entries[i].entry.URL = strings.Replace(entries[i].entry.URL, docs.DefaultBaseURL, customBase, 1)
+	}
+
+	for i, e := range entries {
+		if strings.Contains(e.entry.URL, docs.DefaultBaseURL) {
+			t.Errorf("entry %d (topic %s, title %q): URL still contains DefaultBaseURL after rewrite: %s",
+				i, e.topicName, e.entry.Title, e.entry.URL)
+		}
+		if !strings.HasPrefix(e.entry.URL, customBase) {
+			t.Errorf("entry %d (topic %s, title %q): URL does not start with custom base URL %q: %s",
+				i, e.topicName, e.entry.Title, customBase, e.entry.URL)
+		}
+	}
+}
+
+func TestCollectSpecEntries_DefaultBaseURLNoRewrite(t *testing.T) {
+	entries := collectSpecEntries(docs.DefaultTopics)
+
+	if len(entries) == 0 {
+		t.Fatal("collectSpecEntries returned 0 entries")
+	}
+
+	// When baseURL equals DefaultBaseURL, no rewriting should occur.
+	// Verify all entries already have the default base URL.
+	for i, e := range entries {
+		if !strings.HasPrefix(e.entry.URL, docs.DefaultBaseURL) {
+			t.Errorf("entry %d (topic %s, title %q): URL does not start with DefaultBaseURL: %s",
+				i, e.topicName, e.entry.Title, e.entry.URL)
+		}
 	}
 }
 
