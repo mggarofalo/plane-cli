@@ -88,6 +88,16 @@ func BuildEndpointCommand(topicName, cmdName string, spec *docs.EndpointSpec, de
 		},
 	}
 
+	// Pre-scan: when both "description" and "description_html" exist,
+	// the _html variant registers --description (markdown shorthand)
+	// so the plain param must be skipped to avoid a duplicate flag panic.
+	htmlBaseFlags := make(map[string]bool)
+	for _, p := range spec.Params {
+		if IsHTMLParam(p.Name) {
+			htmlBaseFlags[MarkdownFlagName(p.Name)] = true
+		}
+	}
+
 	// Register flags from spec params
 	var hasNameResolvable, hasIssueRef bool
 	for _, p := range spec.Params {
@@ -96,6 +106,10 @@ func BuildEndpointCommand(topicName, cmdName string, spec *docs.EndpointSpec, de
 		}
 		flagName := ParamToFlagName(p.Name)
 		if globalFlagNames[flagName] {
+			continue
+		}
+		// Skip if an _html variant owns this flag name as its markdown shorthand.
+		if htmlBaseFlags[flagName] && !IsHTMLParam(p.Name) {
 			continue
 		}
 		desc := p.Description
