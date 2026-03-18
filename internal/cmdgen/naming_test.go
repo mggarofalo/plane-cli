@@ -48,6 +48,13 @@ func TestDeriveSubcommandName(t *testing.T) {
 		{"List Customer Work Items", "customer", "list-work-items"},
 		{"Get Worklogs for Issue", "worklog", "get-for-issue"},
 		{"Get Total Time", "worklog", "get-total-time"},
+		{"List Attachments", "attachment", "list"},
+		{"Get Attachment", "attachment", "get"},
+		{"Get Upload Credentials", "attachment", "get-upload-credentials"},
+		{"Upload File", "attachment", "upload-file"},
+		{"Complete Upload", "attachment", "complete-upload"},
+		{"Update Attachment", "attachment", "update"},
+		{"Delete Attachment", "attachment", "delete"},
 	}
 
 	for _, tt := range tests {

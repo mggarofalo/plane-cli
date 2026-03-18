@@ -92,8 +92,8 @@ var DefaultTopics = []Topic{
 		Name: "attachment",
 		Entries: []Entry{
 			{Title: "Overview", URL: DefaultBaseURL + "/api-reference/issue-attachments/overview"},
-			{Title: "Get Attachments", URL: DefaultBaseURL + "/api-reference/issue-attachments/get-attachments"},
-			{Title: "Get Attachment Detail", URL: DefaultBaseURL + "/api-reference/issue-attachments/get-attachment-detail"},
+			{Title: "List Attachments", URL: DefaultBaseURL + "/api-reference/issue-attachments/get-attachments"},
+			{Title: "Get Attachment", URL: DefaultBaseURL + "/api-reference/issue-attachments/get-attachment-detail"},
 			{Title: "Get Upload Credentials", URL: DefaultBaseURL + "/api-reference/issue-attachments/get-upload-credentials"},
 			{Title: "Upload File", URL: DefaultBaseURL + "/api-reference/issue-attachments/upload-file"},
 			{Title: "Complete Upload", URL: DefaultBaseURL + "/api-reference/issue-attachments/complete-upload"},
