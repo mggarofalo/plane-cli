@@ -262,12 +262,16 @@ Use --output json for machine-readable output.`,
 		sort.Strings(topics)
 
 		// Build per-topic info
-		var topicInfos []specTopicSummary
+		topicInfos := []specTopicSummary{}
 		var totalSpecs int
 
 		for _, topicName := range topics {
 			files, err := docs.ListTopicSpecFiles(profile, topicName)
-			if err != nil || len(files) == 0 {
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to list specs for topic %q: %v\n", topicName, err)
+				continue
+			}
+			if len(files) == 0 {
 				continue
 			}
 
@@ -338,6 +342,8 @@ func printListSpecsTable(profile string, topics []specTopicSummary, totalSpecs, 
 		missing := totalEndpoints - totalSpecs
 		if missing > 0 {
 			fmt.Printf("Missing: %d endpoints (run 'plane docs update-specs' to populate)\n", missing)
+		} else if missing < 0 {
+			fmt.Printf("Note: %d extra cached specs (stale entries from removed endpoints?)\n", -missing)
 		} else {
 			fmt.Println("All endpoints cached.")
 		}
@@ -348,7 +354,7 @@ func printListSpecsTable(profile string, topics []specTopicSummary, totalSpecs, 
 
 func printListSpecsJSON(topics []specTopicSummary, totalSpecs, totalEndpoints int) error {
 	result := struct {
-		Topics         interface{} `json:"topics"`
+		Topics         []specTopicSummary `json:"topics"`
 		TotalSpecs     int         `json:"total_specs"`
 		TotalEndpoints int         `json:"total_endpoints,omitempty"`
 		MissingCount   int         `json:"missing_count,omitempty"`
