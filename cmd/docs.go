@@ -358,7 +358,10 @@ func printListSpecsJSON(topics []specTopicSummary, totalSpecs, totalEndpoints in
 		TotalEndpoints: totalEndpoints,
 	}
 	if totalEndpoints > 0 {
-		result.MissingCount = totalEndpoints - totalSpecs
+		missing := totalEndpoints - totalSpecs
+		if missing > 0 {
+			result.MissingCount = missing
+		}
 	}
 
 	enc := json.NewEncoder(os.Stdout)
