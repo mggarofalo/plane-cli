@@ -77,6 +77,33 @@ var globalFlagNames = map[string]bool{
 	"batch":   true,
 }
 
+// addFlag registers a flag on cmd only if a flag with that name doesn't already
+// exist. This prevents panics from pflag's duplicate flag detection regardless
+// of spec param ordering or naming collisions.
+func addFlag(cmd *cobra.Command, name, defVal, desc string) {
+	if cmd.Flags().Lookup(name) == nil {
+		cmd.Flags().String(name, defVal, desc)
+	}
+}
+
+func addIntFlag(cmd *cobra.Command, name string, defVal int, desc string) {
+	if cmd.Flags().Lookup(name) == nil {
+		cmd.Flags().Int(name, defVal, desc)
+	}
+}
+
+func addBoolFlag(cmd *cobra.Command, name string, defVal bool, desc string) {
+	if cmd.Flags().Lookup(name) == nil {
+		cmd.Flags().Bool(name, defVal, desc)
+	}
+}
+
+func addStringSliceFlag(cmd *cobra.Command, name string, defVal []string, desc string) {
+	if cmd.Flags().Lookup(name) == nil {
+		cmd.Flags().StringSlice(name, defVal, desc)
+	}
+}
+
 // BuildEndpointCommand creates a fully-flagged command from a cached spec (Mode A).
 func BuildEndpointCommand(topicName, cmdName string, spec *docs.EndpointSpec, deps *Deps) *cobra.Command {
 	cmd := &cobra.Command{
@@ -134,9 +161,11 @@ func BuildEndpointCommand(topicName, cmdName string, spec *docs.EndpointSpec, de
 			if mdDesc == p.Name {
 				mdDesc = mdFlag
 			}
-			cmd.Flags().String(mdFlag, "", mdDesc+" (markdown)")
-			cmd.Flags().String(flagName, "", mdDesc+" (raw HTML)")
-			cmd.MarkFlagsMutuallyExclusive(mdFlag, flagName)
+			addFlag(cmd, mdFlag, "", mdDesc+" (markdown)")
+			addFlag(cmd, flagName, "", mdDesc+" (raw HTML)")
+			if cmd.Flags().Lookup(mdFlag) != nil && cmd.Flags().Lookup(flagName) != nil {
+				cmd.MarkFlagsMutuallyExclusive(mdFlag, flagName)
+			}
 			continue
 		}
 
@@ -144,13 +173,13 @@ func BuildEndpointCommand(topicName, cmdName string, spec *docs.EndpointSpec, de
 
 		switch p.Type {
 		case "string[]":
-			cmd.Flags().StringSlice(flagName, nil, desc)
+			addStringSliceFlag(cmd, flagName, nil, desc)
 		case "number":
-			cmd.Flags().Int(flagName, 0, desc)
+			addIntFlag(cmd, flagName, 0, desc)
 		case "boolean":
-			cmd.Flags().Bool(flagName, false, desc)
+			addBoolFlag(cmd, flagName, false, desc)
 		default:
-			cmd.Flags().String(flagName, "", desc)
+			addFlag(cmd, flagName, "", desc)
 		}
 
 		if p.Required {

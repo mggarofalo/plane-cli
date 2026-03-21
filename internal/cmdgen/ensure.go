@@ -117,26 +117,14 @@ Returns the resource either way (same output as create/get).`, topicName),
 	// Add --match-field flag
 	cmd.Flags().String(ensureMatchField, "name", "Field to match existing resources on")
 
-	// Pre-scan: when both "description" and "description_html" exist,
-	// the _html variant registers --description (markdown shorthand)
-	// so the plain param must be skipped to avoid a duplicate flag panic.
-	htmlBaseFlags := make(map[string]bool)
-	for _, p := range specs.create.Params {
-		if IsHTMLParam(p.Name) {
-			htmlBaseFlags[MarkdownFlagName(p.Name)] = true
-		}
-	}
-
-	// Register flags from the create spec's params
+	// Register flags from the create spec's params.
+	// Uses addFlag helpers to silently skip duplicates instead of panicking.
 	for _, p := range specs.create.Params {
 		if p.Name == "workspace_slug" || p.Name == "project_id" {
 			continue
 		}
 		flagName := ParamToFlagName(p.Name)
 		if globalFlagNames[flagName] {
-			continue
-		}
-		if htmlBaseFlags[flagName] && !IsHTMLParam(p.Name) {
 			continue
 		}
 		desc := p.Description
@@ -150,21 +138,23 @@ Returns the resource either way (same output as create/get).`, topicName),
 			if mdDesc == p.Name {
 				mdDesc = mdFlag
 			}
-			cmd.Flags().String(mdFlag, "", mdDesc+" (markdown)")
-			cmd.Flags().String(flagName, "", mdDesc+" (raw HTML)")
-			cmd.MarkFlagsMutuallyExclusive(mdFlag, flagName)
+			addFlag(cmd, mdFlag, "", mdDesc+" (markdown)")
+			addFlag(cmd, flagName, "", mdDesc+" (raw HTML)")
+			if cmd.Flags().Lookup(mdFlag) != nil && cmd.Flags().Lookup(flagName) != nil {
+				cmd.MarkFlagsMutuallyExclusive(mdFlag, flagName)
+			}
 			continue
 		}
 
 		switch p.Type {
 		case "string[]":
-			cmd.Flags().StringSlice(flagName, nil, desc)
+			addStringSliceFlag(cmd, flagName, nil, desc)
 		case "number":
-			cmd.Flags().Int(flagName, 0, desc)
+			addIntFlag(cmd, flagName, 0, desc)
 		case "boolean":
-			cmd.Flags().Bool(flagName, false, desc)
+			addBoolFlag(cmd, flagName, false, desc)
 		default:
-			cmd.Flags().String(flagName, "", desc)
+			addFlag(cmd, flagName, "", desc)
 		}
 	}
 
