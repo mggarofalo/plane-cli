@@ -218,10 +218,15 @@ try {
     # ── Initialize spec cache ────────────────────────────────────────────────
 
     if (Get-Command plane -ErrorAction SilentlyContinue) {
+        # Lower ErrorActionPreference for native commands — PS 5.1 creates
+        # terminating errors from stderr before *>$null takes effect when
+        # ErrorActionPreference is Stop, which breaks irm | iex.
+        $savedEAP = $ErrorActionPreference
+        $ErrorActionPreference = 'SilentlyContinue'
+
         Write-Info 'Initializing API spec cache...'
-        try {
-            & plane docs update-specs *>$null
-        } catch {
+        & plane docs update-specs *>$null
+        if ($LASTEXITCODE -ne 0) {
             Write-Info 'Spec cache initialization skipped (authentication may be required).'
         }
 
@@ -229,11 +234,12 @@ try {
         $SkillDir = Join-Path $HOME '.claude' 'skills' 'plane'
         Write-Info "Generating Claude Code skill in $SkillDir..."
         New-Item -ItemType Directory -Path $SkillDir -Force | Out-Null
-        try {
-            & plane skills generate --output $SkillDir *>$null
-        } catch {
+        & plane skills generate --output $SkillDir *>$null
+        if ($LASTEXITCODE -ne 0) {
             Write-Info 'Skill generation skipped.'
         }
+
+        $ErrorActionPreference = $savedEAP
     } else {
         Write-Info 'Skipping spec cache initialization (restart your terminal and run: plane docs update-specs).'
     }
