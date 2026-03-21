@@ -172,11 +172,21 @@ func registerDynamicCommands() {
 			continue
 		}
 
-		// Load cached specs for this topic
-		cachedSpecs, _ := docs.LoadTopicSpecs(profile, topic.Name)
+		// Build each topic in a closure so a panic from a bad spec degrades
+		// gracefully (skip that topic) instead of crashing the entire CLI.
+		func(t docs.Topic) {
+			defer func() {
+				if r := recover(); r != nil {
+					if !flagQuiet {
+						fmt.Fprintf(os.Stderr, "warning: skipped topic %q due to internal error: %v\n", t.Name, r)
+					}
+				}
+			}()
 
-		topicCmd := cmdgen.BuildTopicCommand(topic.Name, &topic, cachedSpecs, deps)
-		rootCmd.AddCommand(topicCmd)
+			cachedSpecs, _ := docs.LoadTopicSpecs(profile, t.Name)
+			topicCmd := cmdgen.BuildTopicCommand(t.Name, &t, cachedSpecs, deps)
+			rootCmd.AddCommand(topicCmd)
+		}(topic)
 	}
 }
 
