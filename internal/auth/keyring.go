@@ -24,13 +24,13 @@ type KeyringStore struct {
 // Pass "" for backend to use the default OS keyring.
 func NewKeyringStore(backend string) (*KeyringStore, error) {
 	cfg := keyring.Config{
-		ServiceName: serviceName,
+		ServiceName:      serviceName,
+		FileDir:          "~/.config/plane-cli/keyring",
+		FilePasswordFunc: keyring.TerminalPrompt,
 	}
 
 	if backend == "file" {
 		cfg.AllowedBackends = []keyring.BackendType{keyring.FileBackend}
-		cfg.FileDir = "~/.config/plane-cli/keyring"
-		cfg.FilePasswordFunc = keyring.TerminalPrompt
 	}
 
 	ring, err := keyring.Open(cfg)
