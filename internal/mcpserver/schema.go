@@ -19,8 +19,11 @@ type jsonSchema struct {
 
 // globalParams that are handled by server-level context rather than being
 // passed to the API directly. These are excluded from the per-tool schema.
+// The Plane API inconsistently names the workspace param: some endpoints use
+// "workspace_slug", others use "slug". Both map to the --workspace flag.
 var hiddenParams = map[string]bool{
 	"workspace_slug": true,
+	"slug":           true,
 	"project_id":     true,
 }
 

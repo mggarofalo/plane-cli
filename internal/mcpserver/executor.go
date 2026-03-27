@@ -166,6 +166,7 @@ func buildURLFromMap(ctx context.Context, client *api.Client, spec *docs.Endpoin
 	path := spec.PathTemplate
 
 	path = strings.ReplaceAll(path, "{workspace_slug}", workspace)
+	path = strings.ReplaceAll(path, "{slug}", workspace)
 	if projectID != "" {
 		path = strings.ReplaceAll(path, "{project_id}", projectID)
 	}

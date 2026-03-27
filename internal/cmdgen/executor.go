@@ -417,8 +417,10 @@ func ExecuteSpecFromArgs(ctx context.Context, spec *docs.EndpointSpec, parsed *P
 func buildURL(client *api.Client, spec *docs.EndpointSpec, cmd *cobra.Command, projectID string, deps *Deps) (string, error) {
 	path := spec.PathTemplate
 
-	// Substitute known variables
+	// Substitute known variables. The Plane API inconsistently names the
+	// workspace param: some endpoints use {workspace_slug}, others {slug}.
 	path = strings.ReplaceAll(path, "{workspace_slug}", client.Workspace)
+	path = strings.ReplaceAll(path, "{slug}", client.Workspace)
 	if projectID != "" {
 		path = strings.ReplaceAll(path, "{project_id}", projectID)
 	}
@@ -472,6 +474,7 @@ func buildURLFromArgs(client *api.Client, spec *docs.EndpointSpec, parsed *Parse
 	path := spec.PathTemplate
 
 	path = strings.ReplaceAll(path, "{workspace_slug}", client.Workspace)
+	path = strings.ReplaceAll(path, "{slug}", client.Workspace)
 	if projectID != "" {
 		path = strings.ReplaceAll(path, "{project_id}", projectID)
 	}
@@ -1025,7 +1028,7 @@ func GenerateHelp(w io.Writer, topicName, cmdName string, spec *docs.EndpointSpe
 
 	fmt.Fprintln(w, "Flags:")
 	for _, p := range spec.Params {
-		if p.Name == "workspace_slug" || p.Name == "project_id" {
+		if p.Name == "workspace_slug" || p.Name == "slug" || p.Name == "project_id" {
 			continue
 		}
 		desc := p.Description

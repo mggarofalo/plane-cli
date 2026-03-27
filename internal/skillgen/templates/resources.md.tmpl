@@ -13,7 +13,7 @@ MCP tool: `{{ .MCPName }}`
 | Flag | Type | Required | Notes |
 |------|------|----------|-------|
 {{- range .Params }}
-| `--{{ .FlagName }}` | {{ .Type }} | {{ if .Required }}yes{{ else }}no{{ end }} |{{ if .Resolvable }} accepts name or UUID{{ end }}{{ if .IssueRef }} accepts UUID or sequence ID (e.g. PROJ-42){{ end }}{{ if .Enum }} enum: {{ join .Enum ", " }}{{ end }} |
+| `--{{ .FlagName }}` | {{ .Type }} | {{ if .Required }}yes{{ else }}no{{ end }} |{{ if .IsGenericPK }} resource UUID — use `list` to discover{{ end }}{{ if .Resolvable }} accepts name or UUID{{ end }}{{ if .IssueRef }} accepts UUID or sequence ID (e.g. PROJ-42){{ end }}{{ if .Enum }} enum: {{ join .Enum ", " }}{{ end }} |
 {{- end }}
 {{ end }}
 {{- else }}

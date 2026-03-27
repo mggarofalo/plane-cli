@@ -128,7 +128,10 @@ func BuildEndpointCommand(topicName, cmdName string, spec *docs.EndpointSpec, de
 	// Register flags from spec params
 	var hasNameResolvable, hasIssueRef bool
 	for _, p := range spec.Params {
-		if p.Name == "workspace_slug" || p.Name == "project_id" {
+		// Skip params handled by global flags. The Plane API inconsistently
+		// names the workspace param: some endpoints use "workspace_slug",
+		// others use "slug". Both are injected from --workspace / -w.
+		if p.Name == "workspace_slug" || p.Name == "slug" || p.Name == "project_id" {
 			continue
 		}
 		flagName := ParamToFlagName(p.Name)

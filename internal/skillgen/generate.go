@@ -49,12 +49,17 @@ type ParamData struct {
 	Required   bool
 	Resolvable bool
 	IssueRef   bool
+	IsGenericPK bool // true for generic "pk" params — signals agents to discover the UUID first
 	Enum       []string
 }
 
 // hiddenParams mirrors mcpserver/schema.go — params handled by server context.
+// The Plane API inconsistently names workspace params: some endpoints use
+// "workspace_slug", others use "slug". Both are excluded here because the CLI
+// injects the workspace via the --workspace / -w global flag.
 var hiddenParams = map[string]bool{
 	"workspace_slug": true,
+	"slug":           true,
 	"project_id":     true,
 }
 
@@ -89,6 +94,12 @@ func Generate(profile, outputDir string) error {
 	resPath := filepath.Join(refDir, "resources.md")
 	if err := executeTemplate(tmpl, "resources.md.tmpl", resPath, data); err != nil {
 		return fmt.Errorf("writing resources.md: %w", err)
+	}
+
+	// Write references/gotchas.md
+	gotchasPath := filepath.Join(refDir, "gotchas.md")
+	if err := executeTemplate(tmpl, "gotchas.md.tmpl", gotchasPath, data); err != nil {
+		return fmt.Errorf("writing gotchas.md: %w", err)
 	}
 
 	return nil
@@ -198,12 +209,13 @@ func filterAndSortParams(params []docs.ParamSpec) []ParamData {
 		seen[flagName] = true
 
 		pd := ParamData{
-			FlagName:   flagName,
-			Type:       normalizeType(p.Type),
-			Required:   p.Required,
-			Resolvable: cmdgen.IsResolvableParam(p.Name),
-			IssueRef:   cmdgen.IsIssueRefParam(p.Name),
-			Enum:       p.Enum,
+			FlagName:    flagName,
+			Type:        normalizeType(p.Type),
+			Required:    p.Required,
+			Resolvable:  cmdgen.IsResolvableParam(p.Name),
+			IssueRef:    cmdgen.IsIssueRefParam(p.Name),
+			IsGenericPK: p.Name == "pk",
+			Enum:        p.Enum,
 		}
 		result = append(result, pd)
 	}
