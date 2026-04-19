@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/mggarofalo/plane-cli/internal/docs"
@@ -45,6 +46,34 @@ func TestBuildTool_BasicEndpoint(t *testing.T) {
 
 	if entry.Handler == nil {
 		t.Error("expected non-nil handler")
+	}
+
+	// issue_create must remind agents that modules are attached separately
+	if !strings.Contains(entry.Tool.Description, "module_add_work_items") {
+		t.Errorf("issue_create description should mention module_add_work_items follow-up, got %q", entry.Tool.Description)
+	}
+}
+
+func TestBuildTool_ModuleHintOnlyForIssueCreate(t *testing.T) {
+	// A non-issue_create POST should NOT get the module hint.
+	spec := &docs.EndpointSpec{
+		TopicName:    "label",
+		EntryTitle:   "Create Label",
+		Method:       "POST",
+		PathTemplate: "/api/v1/workspaces/{workspace_slug}/projects/{project_id}/labels/",
+		Params: []docs.ParamSpec{
+			{Name: "name", Type: "string", Location: docs.ParamBody, Required: true},
+		},
+	}
+
+	cfg := &Config{Workspace: "test-ws", Project: "proj-uuid"}
+	entry := BuildTool("label", spec, cfg)
+
+	if entry == nil {
+		t.Fatal("expected non-nil ToolEntry")
+	}
+	if strings.Contains(entry.Tool.Description, "module_add_work_items") {
+		t.Errorf("only issue_create should mention module_add_work_items, got %q", entry.Tool.Description)
 	}
 }
 

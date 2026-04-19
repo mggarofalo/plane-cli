@@ -59,6 +59,8 @@ func TestGenerate_WithSpecs(t *testing.T) {
 		"Ensure",
 		"Gotchas",
 		"references/gotchas.md",
+		"module add-work-items",
+		"Modules are attached separately",
 	}
 	for _, check := range checks {
 		if !strings.Contains(skill, check) {
@@ -110,6 +112,8 @@ func TestGenerate_WithSpecs(t *testing.T) {
 		"MCP tool names have NO prefix",
 		"JSONL",
 		"--pk",
+		"Modules and Other Associations",
+		"module add-work-items",
 	}
 	for _, check := range gotchasChecks {
 		if !strings.Contains(gotchas, check) {
