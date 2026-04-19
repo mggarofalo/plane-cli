@@ -22,6 +22,19 @@ Common failure patterns when using the Plane CLI or MCP tools. Read this before 
 
 - **Sequence IDs are project-scoped.** `PROJ-42` only resolves within project `PROJ`. If you pass `-p OTHER-PROJECT`, the same sequence ID refers to a different issue or doesn't exist.
 
+## Modules and Other Associations
+
+- **`plane issue create` has no `--module-id` flag.** Module attachment is a separate call after creation:
+  ```bash
+  ID=$(plane issue create --name "Fix login bug" --id-only -w dev -p PROJ)
+  plane module add-work-items --module-id "Current Sprint" --issues "$ID" -w dev -p PROJ
+  ```
+  Skipping this step silently orphans the issue from sprint/roadmap views. Many projects require every issue to have a module — check the project's `AGENTS.md`, `CLAUDE.md`, or other docs for required metadata (modules, labels, priority) before creating issues.
+
+- **Labels are set at create time; modules are not.** `--labels` accepts a comma-separated list on `issue create`. Modules must be attached after.
+
+- **Automation and child issues do not inherit the parent's module.** If a workflow creates follow-up issues programmatically, add an explicit `module add-work-items` step — creation alone does not copy module membership.
+
 ## Data Formats
 
 - **`--description` accepts Markdown.** The CLI converts it to HTML before sending. Do NOT pass raw HTML to `--description` — use `--description-html` for that.

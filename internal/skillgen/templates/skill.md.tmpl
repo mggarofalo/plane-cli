@@ -24,8 +24,9 @@ plane project list -w dev --output table
 
 Then use them in all subsequent commands:
 ```bash
-# Create a work item (names resolve automatically)
-plane issue create --name "Fix login bug" --state-id "In Progress" --priority urgent -w dev -p PROJ
+# Create a work item and attach it to a module (modules are a separate call — see Gotchas)
+ID=$(plane issue create --name "Fix login bug" --state-id "In Progress" --priority urgent --id-only -w dev -p PROJ)
+plane module add-work-items --module-id "Current Sprint" --issues "$ID" -w dev -p PROJ
 
 # List work items
 plane issue list -w dev -p PROJ --all
@@ -46,6 +47,7 @@ Read [references/gotchas.md](references/gotchas.md) before your first call. The 
 3. **`--all` changes the response shape** — without it you get raw pagination; with it you get `{"results": [...], "total_count": N}`
 4. **`--batch` is JSONL, not a JSON array** — one JSON object per line
 5. **`--pk` is the resource UUID** — use `plane <topic> list` to discover it first
+6. **Modules are attached separately** — `issue create` has no `--module-id`; call `module add-work-items` after creation. Projects typically require this.
 
 ## Name Resolution
 

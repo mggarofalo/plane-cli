@@ -26,6 +26,9 @@ func BuildTool(topicName string, spec *docs.EndpointSpec, cfg *Config) *ToolEntr
 
 	toolName := topicName + "_" + actionName
 	description := fmt.Sprintf("%s %s -- %s", spec.Method, spec.PathTemplate, spec.EntryTitle)
+	if toolName == "issue_create" {
+		description += " -- NOTE: modules are attached via a separate module_add_work_items call after creation; check project conventions for required modules/labels."
+	}
 
 	tool := &mcp.Tool{
 		Name:        toolName,
