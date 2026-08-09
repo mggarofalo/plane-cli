@@ -2,6 +2,7 @@ package docs
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -339,6 +340,92 @@ func TestParseEndpointPage_InlineEnumExtraction(t *testing.T) {
 		}
 	}
 	t.Error("missing 'priority' param")
+}
+
+func TestParseEndpointPage_CreateRelation(t *testing.T) {
+	markdown := "# Create work item relation\n\n" +
+		"POST\n/api/v1/workspaces/{workspace_slug}/projects/{project_id}/work-items/{work_item_id}/relations/\n\n" +
+		"### Path Parameters\n\n" +
+		"`work_item_id`:requiredstring\nThe unique identifier of the work item.\n\n" +
+		"### Body Parameters\n\n" +
+		"`relation_type`:requiredstring\nType of relationship between work items\n\n" +
+		"`issues`:requiredarray\nArray of work item IDs to create relations with\n\n" +
+		"### Scopes\n\n"
+
+	entry := Entry{Title: "Create Relation", URL: DefaultBaseURL + "/api-reference/work-item-relations/create-work-item-relation"}
+	spec := ParseEndpointPage(markdown, "relation", entry)
+
+	if spec.Method != "POST" {
+		t.Errorf("method = %q, want POST", spec.Method)
+	}
+	want := "/api/v1/workspaces/{workspace_slug}/projects/{project_id}/work-items/{work_item_id}/relations/"
+	if spec.PathTemplate != want {
+		t.Errorf("path = %q, want %q", spec.PathTemplate, want)
+	}
+
+	byName := map[string]ParamSpec{}
+	for _, p := range spec.Params {
+		byName[p.Name] = p
+	}
+
+	// work_item_id comes from the path template, not the Path Parameters
+	// section — parseInlineParams deliberately skips those to avoid duplicates.
+	if p, ok := byName["work_item_id"]; !ok {
+		t.Error("missing work_item_id param")
+	} else if p.Location != ParamPath {
+		t.Errorf("work_item_id location = %q, want path", p.Location)
+	}
+
+	if p, ok := byName["relation_type"]; !ok {
+		t.Error("missing relation_type param")
+	} else if p.Location != ParamBody || p.Type != "string" || !p.Required {
+		t.Errorf("relation_type = %+v, want required string body param", p)
+	}
+
+	// "array" must normalize to string[] so the flag registers as a slice and
+	// each element gets sequence-ID resolution.
+	if p, ok := byName["issues"]; !ok {
+		t.Error("missing issues param")
+	} else if p.Location != ParamBody || p.Type != "string[]" || !p.Required {
+		t.Errorf("issues = %+v, want required string[] body param", p)
+	}
+}
+
+func TestParseEndpointPage_RemoveRelationIsPOST(t *testing.T) {
+	// The title starts with "Remove", which inferMethodFromTitle maps to
+	// DELETE. The page states POST explicitly, and the explicit method must
+	// win — the endpoint is a POST to a /remove/ sub-path with a body.
+	markdown := "# Remove work item relation\n\n" +
+		"POST\n/api/v1/workspaces/{workspace_slug}/projects/{project_id}/work-items/{work_item_id}/relations/remove/\n\n" +
+		"### Body Parameters\n\n" +
+		"`related_issue`:requiredstring\nID of the related work item to remove relation with\n\n" +
+		"### Scopes\n\n"
+
+	entry := Entry{Title: "Remove Relation", URL: DefaultBaseURL + "/api-reference/work-item-relations/remove-work-item-relation"}
+	spec := ParseEndpointPage(markdown, "relation", entry)
+
+	if inferred := inferMethodFromTitle(entry.Title); inferred != "DELETE" {
+		t.Fatalf("precondition: inferMethodFromTitle(%q) = %q, want DELETE", entry.Title, inferred)
+	}
+	if spec.Method != "POST" {
+		t.Errorf("method = %q, want POST (explicit method must beat title inference)", spec.Method)
+	}
+	if !strings.HasSuffix(spec.PathTemplate, "/relations/remove/") {
+		t.Errorf("path = %q, want suffix /relations/remove/", spec.PathTemplate)
+	}
+
+	var found bool
+	for _, p := range spec.Params {
+		if p.Name == "related_issue" {
+			found = true
+			if p.Location != ParamBody || p.Type != "string" {
+				t.Errorf("related_issue = %+v, want string body param", p)
+			}
+		}
+	}
+	if !found {
+		t.Error("missing related_issue param")
+	}
 }
 
 func TestNormalizeType(t *testing.T) {

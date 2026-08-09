@@ -82,6 +82,11 @@ func topicAliases(topicName string) map[string]bool {
 		aliases["work"] = true
 		aliases["item"] = true
 		aliases["items"] = true
+	case "relation":
+		aliases["relations"] = true
+		aliases["work"] = true
+		aliases["item"] = true
+		aliases["items"] = true
 	case "activity":
 		aliases["activities"] = true
 		aliases["issue-activity"] = true

@@ -327,8 +327,9 @@ func resolveValue(ctx context.Context, value, paramName, workspace, projectID st
 }
 
 // isIssueRefParam returns true if the param accepts issue references.
+// Delegates to cmdgen so the CLI and MCP surfaces stay in step.
 func isIssueRefParam(name string) bool {
-	return name == "work_item_id" || name == "parent" || name == "issues"
+	return cmdgen.IsIssueRefParam(name)
 }
 
 // postCreateActionsRaw performs module/cycle attach after issue creation.

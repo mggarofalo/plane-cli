@@ -598,6 +598,7 @@ var ensureExcludedTopics = map[string]bool{
 	"link":       true, // identified by URL, not name
 	"worklog":    true, // time entries, no unique name
 	"epic":       true, // read-only in API
+	"relation":   true, // no unique name; the server dedupes relation edges
 	"page":       true, // complex structure
 	"member":     true, // read-only listing
 }

@@ -1718,6 +1718,7 @@ func TestIsIssueRefParam(t *testing.T) {
 		{"work_item_id", true},
 		{"parent", true},
 		{"issues", true},
+		{"related_issue", true},
 		{"state_id", false},
 		{"name", false},
 	}

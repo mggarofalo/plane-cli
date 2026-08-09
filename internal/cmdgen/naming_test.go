@@ -55,6 +55,15 @@ func TestDeriveSubcommandName(t *testing.T) {
 		{"Complete Upload", "attachment", "complete-upload"},
 		{"Update Attachment", "attachment", "update"},
 		{"Delete Attachment", "attachment", "delete"},
+		{"Create Relation", "relation", "create"},
+		{"List Relations", "relation", "list"},
+		{"Remove Relation", "relation", "remove"},
+		// The docs page titles are wordier than the entry titles we register.
+		// Both forms must derive to the same subcommand so a maintainer can
+		// sync titles to the docs without silently renaming commands.
+		{"Create Work Item Relation", "relation", "create"},
+		{"List Work Item Relations", "relation", "list"},
+		{"Remove Work Item Relation", "relation", "remove"},
 	}
 
 	for _, tt := range tests {

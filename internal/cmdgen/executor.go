@@ -805,9 +805,10 @@ func executeAutoPageinate(ctx context.Context, client *api.Client, baseURL strin
 // issueRefParams are parameter names that accept work-item references
 // (UUIDs or sequence IDs like "PROJ-42").
 var issueRefParams = map[string]bool{
-	"work_item_id": true,
-	"parent":       true,
-	"issues":       true,
+	"work_item_id":  true,
+	"parent":        true,
+	"issues":        true,
+	"related_issue": true,
 }
 
 // resolvableParams are body parameter names (without _id suffix) that accept
