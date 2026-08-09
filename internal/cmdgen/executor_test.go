@@ -1710,6 +1710,89 @@ func TestIsResolvableParam(t *testing.T) {
 	}
 }
 
+// autoPaginateOutput runs executeAutoPageinate against a stub server returning
+// the given body and captures what was written to stdout.
+func autoPaginateOutput(t *testing.T, body string) string {
+	t.Helper()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, body)
+	}))
+	defer srv.Close()
+
+	deps := &Deps{
+		Formatter: func() output.Formatter { return output.New("json") },
+	}
+	spec := &docs.EndpointSpec{Method: "GET"}
+	client := api.NewClient(srv.URL, "test-token", "test-ws", false, nil)
+
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := executeAutoPageinate(context.Background(), client, srv.URL+"/relations/", spec, deps)
+
+	_ = w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+	return buf.String()
+}
+
+func TestAutoPaginate_NonEnvelopeResponsePassesThrough(t *testing.T) {
+	// Work-item relations return an object keyed by relation type, not a
+	// {"results": [...]} envelope. Unmarshalling into the envelope struct
+	// succeeds (unknown keys are ignored) and yields a nil Results, so
+	// wrapping the response would silently discard every relation.
+	body := `{"blocking":[],"blocked_by":[{"project_id":"p1","issue_id":"i1"}],"relates_to":[]}`
+
+	got := autoPaginateOutput(t, body)
+
+	var result map[string]any
+	if err := json.Unmarshal([]byte(got), &result); err != nil {
+		t.Fatalf("failed to parse output: %v\nOutput: %s", err, got)
+	}
+
+	if _, wrapped := result["results"]; wrapped {
+		t.Fatalf("non-envelope response was wrapped in a pagination envelope: %s", got)
+	}
+
+	blockedBy, ok := result["blocked_by"].([]any)
+	if !ok || len(blockedBy) != 1 {
+		t.Fatalf("blocked_by relation was dropped: %s", got)
+	}
+}
+
+func TestAutoPaginate_EmptyEnvelopeStillWrapped(t *testing.T) {
+	// A genuinely paginated response with no rows still carries "results": [],
+	// so it must keep the envelope rather than fall through as a raw body.
+	body := `{"results":[],"total_count":0,"next_page_results":false}`
+
+	got := autoPaginateOutput(t, body)
+
+	var result map[string]any
+	if err := json.Unmarshal([]byte(got), &result); err != nil {
+		t.Fatalf("failed to parse output: %v\nOutput: %s", err, got)
+	}
+
+	results, ok := result["results"].([]any)
+	if !ok {
+		t.Fatalf("expected a results array, got: %s", got)
+	}
+	if len(results) != 0 {
+		t.Errorf("expected 0 results, got %d", len(results))
+	}
+	if count, _ := result["total_count"].(float64); count != 0 {
+		t.Errorf("total_count = %v, want 0", result["total_count"])
+	}
+}
+
 func TestIsIssueRefParam(t *testing.T) {
 	tests := []struct {
 		param string
