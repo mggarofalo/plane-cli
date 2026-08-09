@@ -251,6 +251,19 @@ func collectBodyFromMap(ctx context.Context, spec *docs.EndpointSpec, args map[s
 		switch p.Type {
 		case "string[]":
 			if slice, ok := toStringSlice(val); ok && len(slice) > 0 {
+				// Issue-reference arrays (e.g. "issues") accept sequence IDs
+				// per element, same as the CLI. Resolve each one.
+				if isIssueRefParam(p.Name) {
+					resolved := make([]string, len(slice))
+					for i, s := range slice {
+						r, err := resolveValue(ctx, s, p.Name, workspace, projectID, cfg)
+						if err != nil {
+							return nil, err
+						}
+						resolved[i] = r
+					}
+					slice = resolved
+				}
 				body[p.Name] = slice
 			}
 		case "number":
