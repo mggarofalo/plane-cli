@@ -292,6 +292,38 @@ func TestSlugHiddenInSkillDocs(t *testing.T) {
 	}
 }
 
+func TestParamDataNotes(t *testing.T) {
+	tests := []struct {
+		name  string
+		param ParamData
+		want  string
+	}{
+		{"nothing", ParamData{}, ""},
+		{"enum only", ParamData{Enum: []string{"a", "b"}}, "enum: a, b"},
+		{"resolvable only", ParamData{Resolvable: true}, "accepts name or UUID"},
+		{
+			// A param can be both, which used to render as the run-on
+			// "accepts name or UUID enum: DRAFT, ...".
+			"resolvable and enum",
+			ParamData{Resolvable: true, Enum: []string{"DRAFT", "ACTIVE"}},
+			"accepts name or UUID; enum: DRAFT, ACTIVE",
+		},
+		{
+			"issue ref and enum",
+			ParamData{IssueRef: true, Enum: []string{"x", "y"}},
+			"accepts UUID or sequence ID (e.g. PROJ-42); enum: x, y",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.param.Notes(); got != tt.want {
+				t.Errorf("Notes() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestPKAnnotationInResources(t *testing.T) {
 	profile := "test-pk-annotation"
 	spec := &docs.EndpointSpec{

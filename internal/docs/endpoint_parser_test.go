@@ -428,6 +428,117 @@ func TestParseEndpointPage_RemoveRelationIsPOST(t *testing.T) {
 	}
 }
 
+func TestParseEndpointPage_BulletEnum(t *testing.T) {
+	// The shape htmlToMarkdown produces: description, then one list item per
+	// line with blank lines between them.
+	markdown := "# Create work item relation\n\n" +
+		"POST\n/api/v1/workspaces/{workspace_slug}/projects/{project_id}/work-items/{work_item_id}/relations/\n\n" +
+		"### Body Parameters\n\n" +
+		"`relation_type`:requiredstring\nType of relationship between work items\n\n" +
+		"- `blocking` - Blocking\n\n- `blocked_by` - Blocked By\n\n- `duplicate` - Duplicate\n\n" +
+		"`issues`:requiredarray\nArray of work item IDs to create relations with\n\n" +
+		"### Scopes\n\n"
+
+	spec := ParseEndpointPage(markdown, "relation", Entry{Title: "Create Relation", URL: "https://example.com"})
+
+	byName := map[string]ParamSpec{}
+	for _, p := range spec.Params {
+		byName[p.Name] = p
+	}
+
+	rt, ok := byName["relation_type"]
+	if !ok {
+		t.Fatal("missing relation_type param")
+	}
+	want := []string{"blocking", "blocked_by", "duplicate"}
+	if len(rt.Enum) != len(want) {
+		t.Fatalf("relation_type enum = %v, want %v", rt.Enum, want)
+	}
+	for i := range want {
+		if rt.Enum[i] != want[i] {
+			t.Errorf("enum[%d] = %q, want %q", i, rt.Enum[i], want[i])
+		}
+	}
+	if rt.Description != "Type of relationship between work items" {
+		t.Errorf("description = %q, want the prose line", rt.Description)
+	}
+
+	// The bullet scan must not swallow the parameter that follows it.
+	if _, ok := byName["issues"]; !ok {
+		t.Error("param after the bullet list was consumed by the enum scan")
+	}
+}
+
+func TestParseEndpointPage_BulletEnumWithNoDescription(t *testing.T) {
+	// priority has no prose at all — the list follows the param row directly.
+	// The first bullet must become an enum value, not the description.
+	markdown := "# Create Work Item\n\n" +
+		"POST\n/api/v1/workspaces/{workspace_slug}/projects/{project_id}/work-items/\n\n" +
+		"### Body Parameters\n\n" +
+		"`priority`:optionalstring\n\n" +
+		"- `urgent` - Urgent\n\n- `high` - High\n\n- `none` - None\n\n" +
+		"### Scopes\n\n"
+
+	spec := ParseEndpointPage(markdown, "issue", Entry{Title: "Create Work Item", URL: "https://example.com"})
+
+	for _, p := range spec.Params {
+		if p.Name != "priority" {
+			continue
+		}
+		want := []string{"urgent", "high", "none"}
+		if len(p.Enum) != len(want) {
+			t.Fatalf("priority enum = %v, want %v", p.Enum, want)
+		}
+		for i := range want {
+			if p.Enum[i] != want[i] {
+				t.Errorf("enum[%d] = %q, want %q", i, p.Enum[i], want[i])
+			}
+		}
+		if p.Description != "" {
+			t.Errorf("description = %q, want empty (a bullet must not become the description)", p.Description)
+		}
+		return
+	}
+	t.Error("missing priority param")
+}
+
+func TestParseEndpointPage_NumericRangeIsNotAnEnum(t *testing.T) {
+	// "Number of results per page (default: 20, max: 100)" used to yield the
+	// nonsense enum ["20", "max"].
+	markdown := "# List Work Items\n\n" +
+		"GET\n/api/v1/workspaces/{workspace_slug}/projects/{project_id}/work-items/\n\n" +
+		"### Query Parameters\n\n" +
+		"`per_page`:optionalinteger\nNumber of results per page (default: 20, max: 100)\n\n" +
+		"### Scopes\n\n"
+
+	spec := ParseEndpointPage(markdown, "issue", Entry{Title: "List Work Items", URL: "https://example.com"})
+
+	for _, p := range spec.Params {
+		if p.Name == "per_page" && p.Enum != nil {
+			t.Errorf("per_page should have no enum, got %v", p.Enum)
+		}
+	}
+}
+
+func TestExtractEnum_RejectsNumericValues(t *testing.T) {
+	tests := []struct {
+		desc string
+		want bool // true if an enum is expected
+	}{
+		{"Number of results per page (default: 20, max: 100)", false},
+		{"Retry window: 30, 60, 120", false},
+		{"Priority: urgent, high, medium, low, none", true},
+		{"one of: active, paused, completed", true},
+	}
+
+	for _, tt := range tests {
+		got := extractEnum(tt.desc)
+		if (got != nil) != tt.want {
+			t.Errorf("extractEnum(%q) = %v, want enum present = %v", tt.desc, got, tt.want)
+		}
+	}
+}
+
 func TestNormalizeType(t *testing.T) {
 	tests := []struct {
 		input    string

@@ -53,6 +53,27 @@ type ParamData struct {
 	Enum       []string
 }
 
+// Notes renders the annotation column of the reference table. Building it here
+// rather than in the template keeps the separators right: a param can be both
+// name-resolvable and enumerated, which used to render as the run-on
+// "accepts name or UUID enum: DRAFT, ...".
+func (p ParamData) Notes() string {
+	var parts []string
+	if p.IsGenericPK {
+		parts = append(parts, "resource UUID — use `list` to discover")
+	}
+	if p.Resolvable {
+		parts = append(parts, "accepts name or UUID")
+	}
+	if p.IssueRef {
+		parts = append(parts, "accepts UUID or sequence ID (e.g. PROJ-42)")
+	}
+	if len(p.Enum) > 0 {
+		parts = append(parts, "enum: "+strings.Join(p.Enum, ", "))
+	}
+	return strings.Join(parts, "; ")
+}
+
 // hiddenParams mirrors mcpserver/schema.go — params handled by server context.
 // The Plane API inconsistently names workspace params: some endpoints use
 // "workspace_slug", others use "slug". Both are excluded here because the CLI

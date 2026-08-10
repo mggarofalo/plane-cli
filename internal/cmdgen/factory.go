@@ -172,7 +172,7 @@ func BuildEndpointCommand(topicName, cmdName string, spec *docs.EndpointSpec, de
 			continue
 		}
 
-		desc += hint
+		desc += hint + paramEnumHint(p.Enum)
 
 		switch p.Type {
 		case "string[]":

@@ -38,6 +38,45 @@ func TestBuildEndpointCommand_DuplicateHTMLParams(t *testing.T) {
 	}
 }
 
+func TestBuildEndpointCommand_EnumInFlagUsage(t *testing.T) {
+	spec := &docs.EndpointSpec{
+		EntryTitle:   "Create Relation",
+		Method:       "POST",
+		PathTemplate: "/api/v1/relations/",
+		SourceURL:    "https://example.com/docs",
+		Params: []docs.ParamSpec{
+			{
+				Name:        "relation_type",
+				Location:    docs.ParamBody,
+				Type:        "string",
+				Description: "Type of relationship between work items",
+				Enum:        []string{"blocking", "blocked_by", "duplicate"},
+			},
+			{Name: "note", Location: docs.ParamBody, Type: "string", Description: "Free text"},
+		},
+	}
+
+	cmd := BuildEndpointCommand("relation", "create", spec, &Deps{})
+
+	flag := cmd.Flags().Lookup("relation-type")
+	if flag == nil {
+		t.Fatal("expected --relation-type flag")
+	}
+	want := "Type of relationship between work items (one of: blocking, blocked_by, duplicate)"
+	if flag.Usage != want {
+		t.Errorf("usage = %q, want %q", flag.Usage, want)
+	}
+
+	// A param without an enum must be left alone.
+	note := cmd.Flags().Lookup("note")
+	if note == nil {
+		t.Fatal("expected --note flag")
+	}
+	if note.Usage != "Free text" {
+		t.Errorf("note usage = %q, want %q", note.Usage, "Free text")
+	}
+}
+
 func TestBuildEndpointCommand_HTMLBeforePlain(t *testing.T) {
 	// Verify no panic regardless of param ordering: _html before plain.
 	spec := &docs.EndpointSpec{

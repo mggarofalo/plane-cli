@@ -1012,6 +1012,15 @@ func IsIssueRefParam(paramName string) bool {
 	return issueRefParams[paramName]
 }
 
+// paramEnumHint returns a short annotation listing a parameter's valid values.
+// Returns "" when the docs did not yield an enum.
+func paramEnumHint(enum []string) string {
+	if len(enum) == 0 {
+		return ""
+	}
+	return " (one of: " + strings.Join(enum, ", ") + ")"
+}
+
 // paramResolutionHint returns a short annotation for the help text of a
 // resolvable or issue-reference parameter. Returns "" if no hint applies.
 func paramResolutionHint(paramName string) string {
@@ -1075,7 +1084,7 @@ func GenerateHelp(w io.Writer, topicName, cmdName string, spec *docs.EndpointSpe
 		}
 
 		flagName := ParamToFlagName(p.Name)
-		fmt.Fprintf(w, "  --%s\t%s%s%s\n", flagName, desc, hint, req)
+		fmt.Fprintf(w, "  --%s\t%s%s%s%s\n", flagName, desc, hint, paramEnumHint(p.Enum), req)
 	}
 
 	// Print resolution summary when the command has resolvable params

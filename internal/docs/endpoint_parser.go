@@ -10,6 +10,10 @@ var (
 	statusCodeRe = regexp.MustCompile(`(?i)(?:Response|Status)[^0-9]*(\d{3})`)
 	// Matches: `param_name`:requiredtype or `param_name`:optionaltype
 	inlineParamRe = regexp.MustCompile("(?m)^`(\\w+)`:(required|optional)(\\S+)")
+	// Matches a docs enum bullet: "- `blocked_by` - Blocked By". Plane renders
+	// a parameter's valid values as a <ul> under its description, which
+	// htmlToMarkdown turns into lines of this shape.
+	enumBulletRe = regexp.MustCompile("^-\\s+`([A-Za-z0-9_.-]+)`")
 )
 
 // ParseEndpointPage extracts an EndpointSpec from a markdown doc page.
@@ -169,16 +173,28 @@ func parseInlineParams(markdown string) []ParamSpec {
 			continue
 		}
 
-		// Next line(s) may be the description
+		// A parameter is followed by an optional prose description and then an
+		// optional bulleted list of its valid values.
 		desc := ""
-		if i+1 < len(lines) {
-			nextLine := strings.TrimSpace(lines[i+1])
-			// Description line: not empty, not another param, not a header
-			if nextLine != "" && !inlineParamRe.MatchString(nextLine) && !strings.HasPrefix(nextLine, "#") {
+		next := i + 1
+		for next < len(lines) && strings.TrimSpace(lines[next]) == "" {
+			next++
+		}
+		if next < len(lines) {
+			nextLine := strings.TrimSpace(lines[next])
+			// Description line: not another param, not a header, and not
+			// already the start of the value list. Without that last check, a
+			// param documented only by bullets takes its first bullet as the
+			// description — which is why --priority used to read "- high - High".
+			if !inlineParamRe.MatchString(nextLine) &&
+				!strings.HasPrefix(nextLine, "#") && !enumBulletRe.MatchString(nextLine) {
 				desc = nextLine
-				i++ // skip description line
+				next++
 			}
 		}
+
+		bulletEnum, consumed := parseEnumBullets(lines, next)
+		i = consumed - 1 // the loop's i++ moves past what we read
 
 		p := ParamSpec{
 			Name:        name,
@@ -187,13 +203,46 @@ func parseInlineParams(markdown string) []ParamSpec {
 			Description: desc,
 			Location:    location,
 		}
-		if enumVals := extractEnum(desc); len(enumVals) > 0 {
+		// A bulleted list is the more reliable signal; fall back to scraping
+		// the description for pages that use the table format instead.
+		if len(bulletEnum) > 1 {
+			p.Enum = bulletEnum
+		} else if enumVals := extractEnum(desc); len(enumVals) > 0 {
 			p.Enum = enumVals
 		}
 		params = append(params, p)
 	}
 
 	return params
+}
+
+// parseEnumBullets reads a run of enum bullets beginning at or after start.
+// Blank lines are skipped: htmlToMarkdown surrounds each list item with
+// newlines, so the items arrive separated by blank lines. Scanning stops at
+// the first non-blank line that is not a bullet — in practice the next
+// parameter or section header — so it cannot run into an unrelated list.
+//
+// It returns the values and the index just past the final bullet, leaving any
+// trailing blank lines for the caller.
+func parseEnumBullets(lines []string, start int) ([]string, int) {
+	var values []string
+	end := start
+	for i := start; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		m := enumBulletRe.FindStringSubmatch(line)
+		if m == nil {
+			break
+		}
+		values = append(values, m[1])
+		end = i + 1
+	}
+	if len(values) == 0 {
+		return nil, start
+	}
+	return values, end
 }
 
 // parseParamTables extracts parameters from markdown tables.
@@ -368,14 +417,35 @@ func extractEnum(desc string) []string {
 	for _, p := range parts {
 		v := strings.TrimSpace(p)
 		v = strings.Trim(v, "`\"'")
-		if v != "" {
-			values = append(values, v)
+		if v == "" {
+			continue
 		}
+		// Bail out on numeric values. Every real enum in this API is a set of
+		// identifiers; a number means we matched prose describing limits, as
+		// in "Number of results per page (default: 20, max: 100)" — which
+		// otherwise yields the nonsense enum ["20", "max"].
+		if isAllDigits(v) {
+			return nil
+		}
+		values = append(values, v)
 	}
 	if len(values) < 2 {
 		return nil
 	}
 	return values
+}
+
+// isAllDigits reports whether s is non-empty and contains only ASCII digits.
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func normalizeType(t string) string {
