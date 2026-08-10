@@ -2,8 +2,13 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/mggarofalo/plane-cli/internal/api"
 	"github.com/mggarofalo/plane-cli/internal/docs"
 )
 
@@ -76,6 +81,68 @@ func TestCollectBodyFromMap_NonIssueRefArrayIsNotResolved(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("assignees[%d] = %q, want %q", i, got[i], want[i])
 		}
+	}
+}
+
+// autoPaginate runs the MCP executeAutoPageinate against a stub server
+// returning the given body.
+func autoPaginate(t *testing.T, body string) map[string]any {
+	t.Helper()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, body)
+	}))
+	defer srv.Close()
+
+	client := api.NewClient(srv.URL, "test-token", "test-ws", false, nil)
+
+	got, err := executeAutoPageinate(context.Background(), client, srv.URL+"/relations/", map[string]any{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(got, &result); err != nil {
+		t.Fatalf("failed to parse output: %v\nOutput: %s", err, got)
+	}
+	return result
+}
+
+func TestAutoPaginate_NonEnvelopeResponsePassesThrough(t *testing.T) {
+	// relation_list returns an object keyed by relation type, and every
+	// single-resource GET tool returns a plain object. Neither is a pagination
+	// envelope, so wrapping them would discard the payload entirely.
+	result := autoPaginate(t, `{"blocking":[],"blocked_by":[{"project_id":"p1","issue_id":"i1"}]}`)
+
+	if _, wrapped := result["results"]; wrapped {
+		t.Fatalf("non-envelope response was wrapped in a pagination envelope: %#v", result)
+	}
+	if blockedBy, ok := result["blocked_by"].([]any); !ok || len(blockedBy) != 1 {
+		t.Fatalf("blocked_by relation was dropped: %#v", result)
+	}
+}
+
+func TestAutoPaginate_SingleResourceGetPassesThrough(t *testing.T) {
+	result := autoPaginate(t, `{"id":"550e8400-e29b-41d4-a716-446655440000","name":"Fix login"}`)
+
+	if _, wrapped := result["results"]; wrapped {
+		t.Fatalf("single-resource GET was wrapped in a pagination envelope: %#v", result)
+	}
+	if result["name"] != "Fix login" {
+		t.Errorf("name = %v, want %q", result["name"], "Fix login")
+	}
+}
+
+func TestAutoPaginate_EmptyEnvelopeStillWrapped(t *testing.T) {
+	result := autoPaginate(t, `{"results":[],"total_count":0,"next_page_results":false}`)
+
+	results, ok := result["results"].([]any)
+	if !ok {
+		t.Fatalf("expected a results array, got: %#v", result)
+	}
+	if len(results) != 0 {
+		t.Errorf("expected 0 results, got %d", len(results))
 	}
 }
 

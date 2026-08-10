@@ -369,7 +369,8 @@ func postCreateActionsRaw(ctx context.Context, relations map[string]string, resp
 
 // executeAutoPageinate fetches all pages and returns combined results.
 func executeAutoPageinate(ctx context.Context, client *api.Client, baseURL string, args map[string]any) ([]byte, error) {
-	var allResults []json.RawMessage
+	// Non-nil so an empty page marshals as "results": [] rather than null.
+	allResults := []json.RawMessage{}
 	cursor := ""
 	perPage := 100
 	if ps, ok := toNumber(args["page_size"]); ok && ps > 0 && ps <= 100 {
@@ -395,6 +396,15 @@ func executeAutoPageinate(ctx context.Context, client *api.Client, baseURL strin
 
 		var raw api.RawPaginatedResponse
 		if err := json.Unmarshal(respBody, &raw); err != nil {
+			return respBody, nil
+		}
+
+		// Mirrors cmdgen.executeAutoPageinate: a plain object unmarshals into
+		// the envelope struct without error (unknown keys are ignored) and
+		// leaves Results nil, so wrapping it would silently discard the whole
+		// payload. Every single-resource GET tool and relation_list hit this.
+		// A genuinely paginated empty page still carries "results": [].
+		if cursor == "" && raw.Results == nil {
 			return respBody, nil
 		}
 
