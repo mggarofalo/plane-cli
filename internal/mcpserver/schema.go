@@ -99,8 +99,15 @@ func BuildInputSchema(spec *docs.EndpointSpec) json.RawMessage {
 // before it is ever sent. Describing the values lets the model choose well
 // while still failing open.
 func paramToSchema(p docs.ParamSpec) jsonSchema {
+	// Fall back to the param name, as the CLI help paths do. Parameters
+	// documented only by a list of values — priority, for one — have no prose
+	// at all, and appending the suffix to "" leaves a stray leading space.
+	desc := p.Description
+	if desc == "" {
+		desc = p.Name
+	}
 	s := jsonSchema{
-		Description: p.Description + enumDescriptionSuffix(p.Enum),
+		Description: desc + enumDescriptionSuffix(p.Enum),
 	}
 
 	switch p.Type {
