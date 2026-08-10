@@ -7,6 +7,69 @@ import (
 	"github.com/mggarofalo/plane-cli/internal/docs"
 )
 
+func TestBuildInputSchema_EnumInDescriptionNotSchema(t *testing.T) {
+	spec := &docs.EndpointSpec{
+		Method:       "POST",
+		PathTemplate: "/api/v1/workspaces/{workspace_slug}/projects/{project_id}/work-items/{work_item_id}/relations/",
+		Params: []docs.ParamSpec{
+			{
+				Name:        "relation_type",
+				Type:        "string",
+				Location:    docs.ParamBody,
+				Required:    true,
+				Description: "Type of relationship between work items",
+				Enum:        []string{"blocking", "blocked_by"},
+			},
+		},
+	}
+
+	raw := BuildInputSchema(spec)
+	var schema map[string]any
+	if err := json.Unmarshal(raw, &schema); err != nil {
+		t.Fatalf("failed to unmarshal schema: %v", err)
+	}
+	props := schema["properties"].(map[string]any)
+	prop := props["relation_type"].(map[string]any)
+
+	want := "Type of relationship between work items (one of: blocking, blocked_by)"
+	if prop["description"] != want {
+		t.Errorf("description = %v, want %q", prop["description"], want)
+	}
+
+	// Deliberately NOT emitted as a JSON Schema enum: clients enforce those,
+	// so a value the docs happened to omit would become uncallable. Listing
+	// the values in the description guides the model but fails open.
+	if _, exists := prop["enum"]; exists {
+		t.Error("enum must not be emitted into the input schema")
+	}
+}
+
+func TestBuildInputSchema_EnumWithNoDescription(t *testing.T) {
+	// priority is documented only by its list of values — no prose at all.
+	// Appending the suffix to an empty description leaves a stray leading
+	// space, so the param name stands in, as it does in the CLI help paths.
+	spec := &docs.EndpointSpec{
+		Method:       "POST",
+		PathTemplate: "/api/v1/workspaces/{workspace_slug}/projects/{project_id}/work-items/",
+		Params: []docs.ParamSpec{
+			{Name: "priority", Type: "string", Location: docs.ParamBody, Enum: []string{"urgent", "high"}},
+		},
+	}
+
+	raw := BuildInputSchema(spec)
+	var schema map[string]any
+	if err := json.Unmarshal(raw, &schema); err != nil {
+		t.Fatalf("failed to unmarshal schema: %v", err)
+	}
+	props := schema["properties"].(map[string]any)
+	prop := props["priority"].(map[string]any)
+
+	want := "priority (one of: urgent, high)"
+	if prop["description"] != want {
+		t.Errorf("description = %q, want %q", prop["description"], want)
+	}
+}
+
 func TestBuildInputSchema_BasicTypes(t *testing.T) {
 	spec := &docs.EndpointSpec{
 		Method:       "POST",

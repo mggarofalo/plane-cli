@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"encoding/json"
+	"strings"
 
 	"github.com/mggarofalo/plane-cli/internal/docs"
 )
@@ -91,9 +92,22 @@ func BuildInputSchema(spec *docs.EndpointSpec) json.RawMessage {
 }
 
 // paramToSchema converts a single ParamSpec to a jsonSchema property.
+//
+// Enum values go into the description rather than a JSON Schema "enum".
+// Schema enums are enforced by the client, so if Plane's docs list only some
+// of a parameter's valid values, an otherwise-good call would be rejected
+// before it is ever sent. Describing the values lets the model choose well
+// while still failing open.
 func paramToSchema(p docs.ParamSpec) jsonSchema {
+	// Fall back to the param name, as the CLI help paths do. Parameters
+	// documented only by a list of values — priority, for one — have no prose
+	// at all, and appending the suffix to "" leaves a stray leading space.
+	desc := p.Description
+	if desc == "" {
+		desc = p.Name
+	}
 	s := jsonSchema{
-		Description: p.Description,
+		Description: desc + enumDescriptionSuffix(p.Enum),
 	}
 
 	switch p.Type {
@@ -109,6 +123,15 @@ func paramToSchema(p docs.ParamSpec) jsonSchema {
 	}
 
 	return s
+}
+
+// enumDescriptionSuffix renders a parameter's valid values as a description
+// suffix. Returns "" when the docs did not yield an enum.
+func enumDescriptionSuffix(enum []string) string {
+	if len(enum) == 0 {
+		return ""
+	}
+	return " (one of: " + strings.Join(enum, ", ") + ")"
 }
 
 // isHTMLParam returns true if the API parameter name has an _html suffix.

@@ -103,8 +103,11 @@ func htmlToMarkdown(html string) string {
 		{regexp.MustCompile(`</tr>`), "\n"},
 		{regexp.MustCompile(`<th[^>]*>(.*?)</th>`), "| $1 "},
 		{regexp.MustCompile(`<td[^>]*>(.*?)</td>`), "| $1 "},
-		// Lists
-		{regexp.MustCompile(`<li[^>]*>(.*?)</li>`), "- $1\n"},
+		// Lists. The leading newline matters: a <ul> can follow an inline
+		// element with no block break between them, and without it the first
+		// item is glued onto the preceding line. Excess blank lines are
+		// collapsed below.
+		{regexp.MustCompile(`<li[^>]*>(.*?)</li>`), "\n- $1\n"},
 		// Links
 		{regexp.MustCompile(`<a[^>]*href="([^"]*)"[^>]*>(.*?)</a>`), "$2 ($1)"},
 		// Bold / emphasis
