@@ -163,6 +163,11 @@ func TestDeriveActionName(t *testing.T) {
 		{"List Links", "link", "list"},
 		{"Get Current User", "user", "get"},
 		{"Add Intake Issue", "intake", "add"},
+		{"Create Relation", "relation", "create"},
+		{"List Relations", "relation", "list"},
+		{"Remove Relation", "relation", "remove"},
+		{"Create Work Item Relation", "relation", "create"},
+		{"Remove Work Item Relation", "relation", "remove"},
 	}
 
 	for _, tt := range tests {

@@ -238,7 +238,7 @@ func TestTopicSupportsEnsure(t *testing.T) {
 		})
 	}
 
-	excluded := []string{"activity", "comment", "attachment", "link", "worklog", "epic", "page", "member"}
+	excluded := []string{"activity", "comment", "attachment", "link", "worklog", "epic", "page", "member", "relation"}
 	for _, topic := range excluded {
 		t.Run("excludes "+topic, func(t *testing.T) {
 			if TopicSupportsEnsure(topic) {

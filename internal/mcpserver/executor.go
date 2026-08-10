@@ -251,6 +251,19 @@ func collectBodyFromMap(ctx context.Context, spec *docs.EndpointSpec, args map[s
 		switch p.Type {
 		case "string[]":
 			if slice, ok := toStringSlice(val); ok && len(slice) > 0 {
+				// Issue-reference arrays (e.g. "issues") accept sequence IDs
+				// per element, same as the CLI. Resolve each one.
+				if isIssueRefParam(p.Name) {
+					resolved := make([]string, len(slice))
+					for i, s := range slice {
+						r, err := resolveValue(ctx, s, p.Name, workspace, projectID, cfg)
+						if err != nil {
+							return nil, err
+						}
+						resolved[i] = r
+					}
+					slice = resolved
+				}
 				body[p.Name] = slice
 			}
 		case "number":
@@ -327,8 +340,9 @@ func resolveValue(ctx context.Context, value, paramName, workspace, projectID st
 }
 
 // isIssueRefParam returns true if the param accepts issue references.
+// Delegates to cmdgen so the CLI and MCP surfaces stay in step.
 func isIssueRefParam(name string) bool {
-	return name == "work_item_id" || name == "parent" || name == "issues"
+	return cmdgen.IsIssueRefParam(name)
 }
 
 // postCreateActionsRaw performs module/cycle attach after issue creation.
@@ -355,7 +369,8 @@ func postCreateActionsRaw(ctx context.Context, relations map[string]string, resp
 
 // executeAutoPageinate fetches all pages and returns combined results.
 func executeAutoPageinate(ctx context.Context, client *api.Client, baseURL string, args map[string]any) ([]byte, error) {
-	var allResults []json.RawMessage
+	// Non-nil so an empty page marshals as "results": [] rather than null.
+	allResults := []json.RawMessage{}
 	cursor := ""
 	perPage := 100
 	if ps, ok := toNumber(args["page_size"]); ok && ps > 0 && ps <= 100 {
@@ -381,6 +396,15 @@ func executeAutoPageinate(ctx context.Context, client *api.Client, baseURL strin
 
 		var raw api.RawPaginatedResponse
 		if err := json.Unmarshal(respBody, &raw); err != nil {
+			return respBody, nil
+		}
+
+		// Mirrors cmdgen.executeAutoPageinate: a plain object unmarshals into
+		// the envelope struct without error (unknown keys are ignored) and
+		// leaves Results nil, so wrapping it would silently discard the whole
+		// payload. Every single-resource GET tool and relation_list hit this.
+		// A genuinely paginated empty page still carries "results": [].
+		if cursor == "" && raw.Results == nil {
 			return respBody, nil
 		}
 

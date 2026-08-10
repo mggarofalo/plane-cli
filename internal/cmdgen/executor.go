@@ -743,7 +743,8 @@ func formatResponse(respBody []byte, deps *Deps) error {
 }
 
 func executeAutoPageinate(ctx context.Context, client *api.Client, baseURL string, spec *docs.EndpointSpec, deps *Deps) error {
-	var allResults []json.RawMessage
+	// Non-nil so an empty page marshals as "results": [] rather than null.
+	allResults := []json.RawMessage{}
 	cursor := ""
 	perPage := 100
 	if deps.FlagPerPage != nil && *deps.FlagPerPage > 0 {
@@ -776,6 +777,16 @@ func executeAutoPageinate(ctx context.Context, client *api.Client, baseURL strin
 			return formatResponse(respBody, deps)
 		}
 
+		// Some endpoints return a plain object rather than a {"results": [...]}
+		// envelope — relations, for instance, return an object keyed by
+		// relation type. Unmarshalling into the envelope struct succeeds for
+		// those (unknown keys are ignored) but yields a nil Results, so
+		// wrapping them would silently discard the whole payload. A genuinely
+		// paginated empty page still carries "results": [].
+		if cursor == "" && raw.Results == nil {
+			return formatResponse(respBody, deps)
+		}
+
 		if raw.Results != nil {
 			var page []json.RawMessage
 			if err := json.Unmarshal(raw.Results, &page); err != nil {
@@ -805,9 +816,10 @@ func executeAutoPageinate(ctx context.Context, client *api.Client, baseURL strin
 // issueRefParams are parameter names that accept work-item references
 // (UUIDs or sequence IDs like "PROJ-42").
 var issueRefParams = map[string]bool{
-	"work_item_id": true,
-	"parent":       true,
-	"issues":       true,
+	"work_item_id":  true,
+	"parent":        true,
+	"issues":        true,
+	"related_issue": true,
 }
 
 // resolvableParams are body parameter names (without _id suffix) that accept

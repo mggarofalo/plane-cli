@@ -93,6 +93,15 @@ var DefaultTopics = []Topic{
 		},
 	},
 	{
+		Name: "relation",
+		Entries: []Entry{
+			{Title: "Overview", URL: DefaultBaseURL + "/api-reference/work-item-relations/overview"},
+			{Title: "Create Relation", URL: DefaultBaseURL + "/api-reference/work-item-relations/create-work-item-relation"},
+			{Title: "List Relations", URL: DefaultBaseURL + "/api-reference/work-item-relations/list-work-item-relations"},
+			{Title: "Remove Relation", URL: DefaultBaseURL + "/api-reference/work-item-relations/remove-work-item-relation"},
+		},
+	},
+	{
 		Name: "link",
 		Entries: []Entry{
 			{Title: "Overview", URL: DefaultBaseURL + "/api-reference/link/overview"},

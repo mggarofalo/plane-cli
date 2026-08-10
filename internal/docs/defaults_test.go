@@ -82,6 +82,45 @@ func TestRebaseTopics_DefaultBaseURLWithTrailingSlash(t *testing.T) {
 	}
 }
 
+func TestDefaultTopics_Relation(t *testing.T) {
+	var relation *Topic
+	for i := range DefaultTopics {
+		if DefaultTopics[i].Name == "relation" {
+			relation = &DefaultTopics[i]
+			break
+		}
+	}
+	if relation == nil {
+		t.Fatal("DefaultTopics has no \"relation\" topic")
+	}
+
+	// Overview plus the three executable endpoints.
+	want := map[string]string{
+		"Overview":        "/api-reference/work-item-relations/overview",
+		"Create Relation": "/api-reference/work-item-relations/create-work-item-relation",
+		"List Relations":  "/api-reference/work-item-relations/list-work-item-relations",
+		"Remove Relation": "/api-reference/work-item-relations/remove-work-item-relation",
+	}
+	if len(relation.Entries) != len(want) {
+		t.Fatalf("relation entry count = %d, want %d", len(relation.Entries), len(want))
+	}
+
+	for _, entry := range relation.Entries {
+		path, ok := want[entry.Title]
+		if !ok {
+			t.Errorf("unexpected relation entry title %q", entry.Title)
+			continue
+		}
+		if entry.URL != DefaultBaseURL+path {
+			t.Errorf("entry %q URL = %q, want %q", entry.Title, entry.URL, DefaultBaseURL+path)
+		}
+		delete(want, entry.Title)
+	}
+	for title := range want {
+		t.Errorf("missing relation entry %q", title)
+	}
+}
+
 func TestRebaseTopics_DoesNotMutateOriginal(t *testing.T) {
 	// Save a sample URL before rebasing
 	origURL := DefaultTopics[0].Entries[0].URL
