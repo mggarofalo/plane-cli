@@ -535,6 +535,27 @@ func TestExtractField_UnresolvablePathErrors(t *testing.T) {
 	}
 }
 
+func TestExtractField_EmptyResultsIsNotAMissingField(t *testing.T) {
+	// An empty project or a filter that matched nothing must not fail a
+	// script. Zero rows is zero lines, not "no such field".
+	cases := map[string][]byte{
+		"empty envelope": []byte(`{"results":[],"total_count":0}`),
+		"empty array":    []byte(`[]`),
+	}
+
+	for name, data := range cases {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			if err := ExtractField(&buf, data, "name"); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if buf.Len() != 0 {
+				t.Errorf("expected no output, got %q", buf.String())
+			}
+		})
+	}
+}
+
 func TestExtractField_PresentButNullPrintsEmpty(t *testing.T) {
 	data := []byte(`{"id":"abc","parent":null}`)
 

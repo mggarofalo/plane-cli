@@ -74,6 +74,12 @@ func ExtractField(w io.Writer, data []byte, fieldPath string) error {
 		return fmt.Errorf("field %q not found in response", fieldPath)
 	}
 
+	// No rows to check. Zero results is zero lines, not a missing field — an
+	// empty project or a filter that matched nothing must not fail a script.
+	if len(items) == 0 {
+		return nil
+	}
+
 	// Buffer so a miss does not leave partial output behind before the error.
 	var buf bytes.Buffer
 	found := false
