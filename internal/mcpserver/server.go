@@ -40,7 +40,7 @@ func (c *Config) NewClient(workspace string) (*api.Client, error) {
 		Config:    cfg,
 	}
 
-	store, err := auth.NewKeyringStore("")
+	store, err := auth.NewKeyringStore()
 	if err == nil {
 		resolver.Store = store
 	}

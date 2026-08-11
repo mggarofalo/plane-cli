@@ -109,7 +109,7 @@ var authLoginCmd = &cobra.Command{
 		}
 
 		// Store in keyring
-		store, err := auth.NewKeyringStore("")
+		store, err := auth.NewKeyringStore()
 		if err != nil {
 			return fmt.Errorf("opening keyring: %w", err)
 		}
@@ -146,7 +146,7 @@ var authLogoutCmd = &cobra.Command{
 			return err
 		}
 
-		store, err := auth.NewKeyringStore("")
+		store, err := auth.NewKeyringStore()
 		if err != nil {
 			return fmt.Errorf("opening keyring: %w", err)
 		}
@@ -177,7 +177,7 @@ var authStatusCmd = &cobra.Command{
 			Config:    cfg,
 		}
 
-		store, err := auth.NewKeyringStore("")
+		store, err := auth.NewKeyringStore()
 		if err == nil {
 			resolver.Store = store
 		}
@@ -264,7 +264,7 @@ API keys. Copy the session_id cookie value from your browser's dev tools
 		}
 
 		// Store in keyring
-		store, err := auth.NewKeyringStore("")
+		store, err := auth.NewKeyringStore()
 		if err != nil {
 			return fmt.Errorf("opening keyring: %w", err)
 		}
@@ -291,7 +291,7 @@ var authSwitchCmd = &cobra.Command{
 			return err
 		}
 
-		store, err := auth.NewKeyringStore("")
+		store, err := auth.NewKeyringStore()
 		if err != nil {
 			return fmt.Errorf("opening keyring: %w", err)
 		}

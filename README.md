@@ -88,6 +88,9 @@ plane auth status     # Show current auth info
 plane auth logout     # Remove stored credentials
 ```
 
+On headless machines and CI runners with no OS keyring, skip `auth login` and set
+`PLANE_API_KEY` instead.
+
 ### Multiple profiles
 
 ```bash

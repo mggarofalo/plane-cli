@@ -130,6 +130,8 @@ Two auth transports:
 
 Credentials are resolved in order: CLI flag → env var → OS keyring. Tokens are stored as `{profile}/api-key` and `{profile}/session-token` in the keyring. The `Credential` type zeroes token bytes after use.
 
+The keyring is `zalando/go-keyring`, whose macOS backend shells out to `/usr/bin/security` rather than linking the Security framework. That matters: release builds set `CGO_ENABLED=0` to cross-compile from a Linux runner, and a cgo-gated Keychain backend would silently compile out and fall back to a passphrase-prompting file store. Test keyring changes against a `GOOS=darwin CGO_ENABLED=0` build, never a native macOS build. There is no file backend; headless environments use `PLANE_API_KEY`.
+
 ### Output formatting
 
 Two output paths:
