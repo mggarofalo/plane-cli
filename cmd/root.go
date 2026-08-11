@@ -220,7 +220,7 @@ func NewClient() (*api.Client, error) {
 	}
 
 	// Try keyring (best-effort — may fail in CI/headless)
-	store, err := auth.NewKeyringStore("")
+	store, err := auth.NewKeyringStore()
 	if err == nil {
 		resolver.Store = store
 	}
@@ -352,7 +352,7 @@ func NewSessionClient() *api.Client {
 		return nil
 	}
 
-	store, err := auth.NewKeyringStore("")
+	store, err := auth.NewKeyringStore()
 	if err != nil {
 		return nil
 	}
