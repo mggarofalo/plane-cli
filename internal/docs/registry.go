@@ -3,6 +3,7 @@ package docs
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 )
 
@@ -24,7 +25,10 @@ type DocsRegistry struct {
 	Profile string
 	BaseURL string
 	Quiet   bool
-	topics  []Topic
+	// HTTPClient fetches the remote llms.txt index. Nil uses a default
+	// client; tests inject one to keep Load hermetic.
+	HTTPClient *http.Client
+	topics     []Topic
 }
 
 // NewRegistry creates a new DocsRegistry for the given profile and base URL.
@@ -122,7 +126,7 @@ func (r *DocsRegistry) LookupEntry(topicName, action string) *Entry {
 }
 
 func (r *DocsRegistry) fetchAndCache(ctx context.Context) ([]Topic, error) {
-	raw, err := FetchLLMSTxt(ctx, r.BaseURL)
+	raw, err := FetchLLMSTxt(ctx, r.HTTPClient, r.BaseURL)
 	if err != nil {
 		return nil, err
 	}
