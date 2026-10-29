@@ -10,11 +10,14 @@ import (
 	"time"
 )
 
-// FetchLLMSTxt fetches the llms.txt index from the given base URL.
-func FetchLLMSTxt(ctx context.Context, baseURL string) (string, error) {
+// FetchLLMSTxt fetches the llms.txt index from the given base URL using
+// client. A nil client uses a default client with a 15-second timeout.
+func FetchLLMSTxt(ctx context.Context, client *http.Client, baseURL string) (string, error) {
 	url := strings.TrimRight(baseURL, "/") + "/llms.txt"
 
-	client := &http.Client{Timeout: 15 * time.Second}
+	if client == nil {
+		client = &http.Client{Timeout: 15 * time.Second}
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", fmt.Errorf("creating request: %w", err)
